@@ -4,27 +4,37 @@ declare(strict_types=1);
 
 namespace App\Rector\Doctrine\QueryBuilder;
 
-use PhpParser\Node\Arg;
 use PhpParser\Node\Expr\MethodCall;
-use PhpParser\Node\Identifier;
-use PhpParser\Node\Scalar\String_;
+use App\Rector\Doctrine\Parser\CommonSqlParser;
+use App\Rector\Doctrine\Parser\SetClauseParser;
 
 /**
- * Builds Doctrine QueryBuilder for INSERT queries
+ * Refactored INSERT query builder using common utilities
  */
 class InsertQueryBuilder
 {
+    private CommonSqlParser $commonParser;
+    private SetClauseParser $setParser;
+    private QueryBuilderFactory $factory;
+
+    public function __construct(
+        CommonSqlParser $commonParser = null,
+        SetClauseParser $setParser = null,
+        QueryBuilderFactory $factory = null
+    ) {
+        $this->commonParser = $commonParser ?? new CommonSqlParser();
+        $this->setParser = $setParser ?? new SetClauseParser($this->commonParser);
+        $this->factory = $factory ?? new QueryBuilderFactory();
+    }
+
     public function build(MethodCall $queryBuilder, string $sql): MethodCall
     {
+        $sql = $this->commonParser->normalizeSql($sql);
         $parts = $this->parseInsertQuery($sql);
 
         // INSERT INTO table
         if (!empty($parts['table'])) {
-            $queryBuilder = new MethodCall(
-                $queryBuilder,
-                new Identifier('insert'),
-                [new Arg(new String_($parts['table']))]
-            );
+            $queryBuilder = $this->factory->createMethodCall($queryBuilder, 'insert', [$parts['table']]);
         }
 
         // Handle different INSERT patterns
@@ -36,7 +46,21 @@ class InsertQueryBuilder
             $queryBuilder = $this->buildInsertSelect($queryBuilder, $parts['selectQuery']);
         } elseif (!empty($parts['setClause'])) {
             // INSERT ... SET (MySQL specific)
-            $queryBuilder = $this->buildInsertSet($queryBuilder, $parts['setClause']);
+            $setPairs = $this->setParser->parseSetClause($parts['setClause']);
+            $queryBuilder = $this->factory->addSetClauses($queryBuilder, $setPairs, 'setValue');
+        } elseif (!empty($parts['multipleValues'])) {
+            // Handle multiple VALUES rows (INSERT INTO ... VALUES (...), (...), ...)
+            // For now, we'll handle just the first row and add a comment for manual review
+            if (!empty($parts['multipleValues'][0])) {
+                $queryBuilder = $this->buildInsertWithValues($queryBuilder, $parts['multipleValues'][0]);
+                if (count($parts['multipleValues']) > 1) {
+                    // Add comment for additional rows
+                    $queryBuilder = $this->factory->createMethodCall($queryBuilder, 'setValue', [
+                        '__MULTIPLE_VALUES__',
+                        '/* TODO: Handle ' . (count($parts['multipleValues']) - 1) . ' additional rows */'
+                    ]);
+                }
+            }
         }
 
         return $queryBuilder;
@@ -45,7 +69,6 @@ class InsertQueryBuilder
     private function parseInsertQuery(string $sql): array
     {
         $parts = [];
-        $sql = preg_replace('/\s+/', ' ', trim($sql));
 
         // INSERT INTO table
         if (preg_match('/INSERT\s+(?:INTO\s+)?(\w+)/i', $sql, $matches)) {
@@ -54,12 +77,12 @@ class InsertQueryBuilder
 
         // Pattern 1: INSERT INTO table (columns) VALUES (values)
         if (preg_match('/\(([^)]+)\)\s+VALUES\s*\(([^)]+)\)/i', $sql, $matches)) {
-            $parts['columns'] = $this->parseColumnList($matches[1]);
-            $parts['values'] = $this->parseValueList($matches[2]);
+            $parts['columns'] = $this->setParser->parseColumnList($matches[1]);
+            $parts['values'] = $this->setParser->parseValueList($matches[2]);
         }
         // Pattern 2: INSERT INTO table VALUES (values) - without explicit columns
         elseif (preg_match('/VALUES\s*\(([^)]+)\)/i', $sql, $matches)) {
-            $parts['values'] = $this->parseValueList($matches[1]);
+            $parts['values'] = $this->setParser->parseValueList($matches[1]);
         }
         // Pattern 3: INSERT ... SELECT
         elseif (preg_match('/INSERT\s+(?:INTO\s+)?\w+\s+(SELECT.+)/i', $sql, $matches)) {
@@ -76,7 +99,7 @@ class InsertQueryBuilder
             if (preg_match_all('/\(([^)]+)\)/i', $valuesSection, $rowMatches)) {
                 $parts['multipleValues'] = [];
                 foreach ($rowMatches[1] as $rowValues) {
-                    $parts['multipleValues'][] = $this->parseValueList($rowValues);
+                    $parts['multipleValues'][] = $this->setParser->parseValueList($rowValues);
                 }
             }
         }
@@ -84,131 +107,27 @@ class InsertQueryBuilder
         return $parts;
     }
 
-    private function parseColumnList(string $columnList): array
-    {
-        // Split by comma, but respect quotes and functions
-        $columns = [];
-        $current = '';
-        $inQuotes = false;
-        $quoteChar = '';
-        $depth = 0;
-
-        for ($i = 0; $i < strlen($columnList); $i++) {
-            $char = $columnList[$i];
-
-            if (($char === '"' || $char === "'" || $char === '`') && !$inQuotes) {
-                $inQuotes = true;
-                $quoteChar = $char;
-                $current .= $char;
-            } elseif ($char === $quoteChar && $inQuotes) {
-                $inQuotes = false;
-                $quoteChar = '';
-                $current .= $char;
-            } elseif (!$inQuotes) {
-                if ($char === '(') {
-                    $depth++;
-                    $current .= $char;
-                } elseif ($char === ')') {
-                    $depth--;
-                    $current .= $char;
-                } elseif ($char === ',' && $depth === 0) {
-                    $columns[] = trim($current);
-                    $current = '';
-                } else {
-                    $current .= $char;
-                }
-            } else {
-                $current .= $char;
-            }
-        }
-
-        if (trim($current) !== '') {
-            $columns[] = trim($current);
-        }
-
-        // Clean column names (remove quotes, etc.)
-        return array_map(function($column) {
-            return trim($column, " \t\n\r\0\x0B`\"'");
-        }, $columns);
-    }
-
-    private function parseValueList(string $valueList): array
-    {
-        // Similar parsing logic as columns but preserve the original format for values
-        $values = [];
-        $current = '';
-        $inQuotes = false;
-        $quoteChar = '';
-        $depth = 0;
-
-        for ($i = 0; $i < strlen($valueList); $i++) {
-            $char = $valueList[$i];
-
-            if (($char === '"' || $char === "'") && !$inQuotes) {
-                $inQuotes = true;
-                $quoteChar = $char;
-                $current .= $char;
-            } elseif ($char === $quoteChar && $inQuotes) {
-                $inQuotes = false;
-                $quoteChar = '';
-                $current .= $char;
-            } elseif (!$inQuotes) {
-                if ($char === '(') {
-                    $depth++;
-                    $current .= $char;
-                } elseif ($char === ')') {
-                    $depth--;
-                    $current .= $char;
-                } elseif ($char === ',' && $depth === 0) {
-                    $values[] = trim($current);
-                    $current = '';
-                } else {
-                    $current .= $char;
-                }
-            } else {
-                $current .= $char;
-            }
-        }
-
-        if (trim($current) !== '') {
-            $values[] = trim($current);
-        }
-
-        return $values;
-    }
-
     private function buildInsertWithColumns(MethodCall $queryBuilder, array $columns, array $values): MethodCall
     {
-        // Convert positional parameters to named parameters
-        $paramCount = 0;
-        $processedValues = [];
-
-        foreach ($values as $value) {
-            if ($value === '?') {
-                $paramCount++;
-                $processedValues[] = ":param$paramCount";
-            } else {
-                $processedValues[] = $value;
-            }
-        }
-
-        // Add setValue() calls for each column-value pair
-        $columnCount = count($columns);
-        $valueCount = count($processedValues);
-        $maxCount = max($columnCount, $valueCount);
+        // Create setValue calls for each column-value pair
+        $maxCount = max(count($columns), count($values));
 
         for ($i = 0; $i < $maxCount; $i++) {
             $column = $columns[$i] ?? "column$i";
-            $value = $processedValues[$i] ?? '?';
+            $value = $values[$i] ?? '?';
 
-            $queryBuilder = new MethodCall(
-                $queryBuilder,
-                new Identifier('setValue'),
-                [
-                    new Arg(new String_($column)),
-                    new Arg(new String_($value))
-                ]
-            );
+            $queryBuilder = $this->factory->createMethodCall($queryBuilder, 'setValue', [$column, $value]);
+        }
+
+        return $queryBuilder;
+    }
+
+    private function buildInsertWithValues(MethodCall $queryBuilder, array $values): MethodCall
+    {
+        // When no explicit columns are provided, create generic column names
+        foreach ($values as $index => $value) {
+            $column = "column" . ($index + 1);
+            $queryBuilder = $this->factory->createMethodCall($queryBuilder, 'setValue', [$column, $value]);
         }
 
         return $queryBuilder;
@@ -220,103 +139,9 @@ class InsertQueryBuilder
         // This is more complex and might require a different approach in Doctrine
         // For now, we'll create a comment indicating this needs manual conversion
 
-        $queryBuilder = new MethodCall(
-            $queryBuilder,
-            new Identifier('setValue'),
-            [
-                new Arg(new String_('__INSERT_SELECT__')),
-                new Arg(new String_("/* TODO: Convert SELECT query: $selectQuery */"))
-            ]
-        );
-
-        return $queryBuilder;
-    }
-
-    private function buildInsertSet(MethodCall $queryBuilder, string $setClause): MethodCall
-    {
-        // Parse SET clause: column1 = value1, column2 = value2, ...
-        $setPairs = $this->parseSetClause($setClause);
-
-        foreach ($setPairs as $pair) {
-            if (isset($pair['column']) && isset($pair['value'])) {
-                $queryBuilder = new MethodCall(
-                    $queryBuilder,
-                    new Identifier('setValue'),
-                    [
-                        new Arg(new String_($pair['column'])),
-                        new Arg(new String_($pair['value']))
-                    ]
-                );
-            }
-        }
-
-        return $queryBuilder;
-    }
-
-    private function parseSetClause(string $setClause): array
-    {
-        $pairs = [];
-        $current = '';
-        $inQuotes = false;
-        $quoteChar = '';
-        $depth = 0;
-
-        for ($i = 0; $i < strlen($setClause); $i++) {
-            $char = $setClause[$i];
-
-            if (($char === '"' || $char === "'") && !$inQuotes) {
-                $inQuotes = true;
-                $quoteChar = $char;
-                $current .= $char;
-            } elseif ($char === $quoteChar && $inQuotes) {
-                $inQuotes = false;
-                $quoteChar = '';
-                $current .= $char;
-            } elseif (!$inQuotes) {
-                if ($char === '(') {
-                    $depth++;
-                    $current .= $char;
-                } elseif ($char === ')') {
-                    $depth--;
-                    $current .= $char;
-                } elseif ($char === ',' && $depth === 0) {
-                    $pairs[] = $this->parseSetPair(trim($current));
-                    $current = '';
-                } else {
-                    $current .= $char;
-                }
-            } else {
-                $current .= $char;
-            }
-        }
-
-        if (trim($current) !== '') {
-            $pairs[] = $this->parseSetPair(trim($current));
-        }
-
-        return array_filter($pairs); // Remove null entries
-    }
-
-    private function parseSetPair(string $pair): ?array
-    {
-        if (strpos($pair, '=') === false) {
-            return null;
-        }
-
-        $parts = explode('=', $pair, 2);
-        $column = trim($parts[0]);
-        $value = trim($parts[1]);
-
-        // Convert ? to named parameters
-        if ($value === '?') {
-            static $paramCount = 0;
-            $paramCount++;
-            $value = ":param$paramCount";
-        }
-
-        return [
-            'column' => trim($column, " \t\n\r\0\x0B`\"'"),
-            'value' => $value
-        ];
+        return $this->factory->createMethodCall($queryBuilder, 'setValue', [
+            '__INSERT_SELECT__',
+            "/* TODO: Convert SELECT query: $selectQuery */"
+        ]);
     }
 }

@@ -7,6 +7,7 @@ namespace App\Rector\Doctrine;
 use PhpParser\Node;
 use PhpParser\Node\Expr\MethodCall;
 use PhpParser\Node\Expr\Variable;
+use PhpParser\Node\Identifier;
 use Rector\Rector\AbstractRector;
 use Symplify\RuleDocGenerator\ValueObject\CodeSample\CodeSample;
 use Symplify\RuleDocGenerator\ValueObject\RuleDefinition;
@@ -14,14 +15,19 @@ use App\Rector\Doctrine\QueryBuilder\SelectQueryBuilder;
 use App\Rector\Doctrine\QueryBuilder\InsertQueryBuilder;
 use App\Rector\Doctrine\QueryBuilder\UpdateQueryBuilder;
 use App\Rector\Doctrine\QueryBuilder\DeleteQueryBuilder;
+use App\Rector\Doctrine\QueryBuilder\QueryBuilderFactory;
 use App\Rector\Doctrine\Parser\SqlExtractor;
+use App\Rector\Doctrine\Parser\CommonSqlParser;
 
 /**
  * Main Rector rule that converts PDO queries to Doctrine QueryBuilder
+ * Now using refactored components with shared utilities
  */
 final class PdoToQueryBuilderRector extends AbstractRector
 {
     private SqlExtractor $sqlExtractor;
+    private CommonSqlParser $commonParser;
+    private QueryBuilderFactory $factory;
     private SelectQueryBuilder $selectBuilder;
     private InsertQueryBuilder $insertBuilder;
     private UpdateQueryBuilder $updateBuilder;
@@ -30,16 +36,20 @@ final class PdoToQueryBuilderRector extends AbstractRector
     public function __construct()
     {
         $this->sqlExtractor = new SqlExtractor();
-        $this->selectBuilder = new SelectQueryBuilder();
-        $this->insertBuilder = new InsertQueryBuilder();
-        $this->updateBuilder = new UpdateQueryBuilder();
-        $this->deleteBuilder = new DeleteQueryBuilder();
+        $this->commonParser = new CommonSqlParser();
+        $this->factory = new QueryBuilderFactory();
+
+        // Initialize builders with shared dependencies
+        $this->selectBuilder = new SelectQueryBuilder($this->commonParser, $this->factory);
+        $this->insertBuilder = new InsertQueryBuilder($this->commonParser, null, $this->factory);
+        $this->updateBuilder = new UpdateQueryBuilder($this->commonParser, null, $this->factory);
+        $this->deleteBuilder = new DeleteQueryBuilder($this->commonParser, $this->factory);
     }
 
     public function getRuleDefinition(): RuleDefinition
     {
         return new RuleDefinition(
-            'Convierte consultas PDO a QueryBuilder de Doctrine/DBAL',
+            'Convierte consultas PDO a QueryBuilder de Doctrine/DBAL usando componentes refactorizados',
             [
                 new CodeSample(
                     <<<'CODE_SAMPLE'
@@ -51,26 +61,11 @@ final class PdoToQueryBuilderRector extends AbstractRector
                     <<<'CODE_SAMPLE'
                     $users = $this->connection->createQueryBuilder()
                         ->select('*')
-                        ->from('users')
+                        ->from('users', 'users')
                         ->where('age > :param1')
                         ->andWhere('name = :param2')
                         ->executeQuery()
                         ->fetchAllAssociative();
-                    CODE_SAMPLE
-                ),
-                new CodeSample(
-                    <<<'CODE_SAMPLE'
-                    $stmt = $pdo->prepare("INSERT INTO users (name, email, age) VALUES (?, ?, ?)");
-                    $stmt->execute(['John', 'john@example.com', 25]);
-                    CODE_SAMPLE
-                    ,
-                    <<<'CODE_SAMPLE'
-                    $this->connection->createQueryBuilder()
-                        ->insert('users')
-                        ->setValue('name', ':param1')
-                        ->setValue('email', ':param2')
-                        ->setValue('age', ':param3')
-                        ->executeStatement();
                     CODE_SAMPLE
                 ),
             ]
@@ -142,9 +137,9 @@ final class PdoToQueryBuilderRector extends AbstractRector
         // Para query(), añadir executeQuery() al final para SELECT o executeStatement() para otros
         if ($queryBuilder instanceof MethodCall) {
             $sqlUpper = strtoupper(trim($sql));
-            $executeMethod = strpos($sqlUpper, 'SELECT') === 0 ? 'executeQuery' : 'executeStatement';
+            $executeMethod = str_starts_with($sqlUpper, 'SELECT') ? 'executeQuery' : 'executeStatement';
 
-            return new MethodCall($queryBuilder, new \PhpParser\Node\Identifier($executeMethod));
+            return new MethodCall($queryBuilder, new Identifier($executeMethod));
         }
 
         return null;
@@ -152,30 +147,20 @@ final class PdoToQueryBuilderRector extends AbstractRector
 
     private function buildQueryBuilderFromSql(string $sql): ?MethodCall
     {
-        $sql = trim($sql);
+        $sql = $this->commonParser->normalizeSql($sql);
         $sqlUpper = strtoupper($sql);
 
         // Crear el QueryBuilder base
         $baseQueryBuilder = $this->createBaseQueryBuilder();
 
         // Delegar a los builders específicos según el tipo de consulta
-        if (strpos($sqlUpper, 'SELECT') === 0) {
-            return $this->selectBuilder->build($baseQueryBuilder, $sql);
-        }
-
-        if (strpos($sqlUpper, 'INSERT') === 0) {
-            return $this->insertBuilder->build($baseQueryBuilder, $sql);
-        }
-
-        if (strpos($sqlUpper, 'UPDATE') === 0) {
-            return $this->updateBuilder->build($baseQueryBuilder, $sql);
-        }
-
-        if (strpos($sqlUpper, 'DELETE') === 0) {
-            return $this->deleteBuilder->build($baseQueryBuilder, $sql);
-        }
-
-        return null;
+        return match (true) {
+            str_starts_with($sqlUpper, 'SELECT') => $this->selectBuilder->build($baseQueryBuilder, $sql),
+            str_starts_with($sqlUpper, 'INSERT') => $this->insertBuilder->build($baseQueryBuilder, $sql),
+            str_starts_with($sqlUpper, 'UPDATE') => $this->updateBuilder->build($baseQueryBuilder, $sql),
+            str_starts_with($sqlUpper, 'DELETE') => $this->deleteBuilder->build($baseQueryBuilder, $sql),
+            default => null,
+        };
     }
 
     private function createBaseQueryBuilder(): MethodCall
@@ -183,9 +168,9 @@ final class PdoToQueryBuilderRector extends AbstractRector
         return new MethodCall(
             new MethodCall(
                 new Variable('this'),
-                new \PhpParser\Node\Identifier('connection')
+                new Identifier('connection')
             ),
-            new \PhpParser\Node\Identifier('createQueryBuilder')
+            new Identifier('createQueryBuilder')
         );
     }
 }
