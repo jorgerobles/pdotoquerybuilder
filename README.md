@@ -12,13 +12,14 @@ composer require --dev rector/rector
 2. Copia el archivo `PdoToQueryBuilderRector.php` a tu proyecto.
 
 3. Configura rector.php:
+
 ```php
 <?php
 
 declare(strict_types=1);
 
 use Rector\Config\RectorConfig;
-use App\Rector\Doctrine\PdoToQueryBuilderRector;
+use JDR\Rector\PdoToQb\PdoToQueryBuilderRector;
 
 return static function (RectorConfig $rectorConfig): void {
     $rectorConfig->rule(PdoToQueryBuilderRector::class);
@@ -171,14 +172,14 @@ $stmt = $pdo->prepare("
 ## Configuración avanzada
 
 ### Rector configuration con reglas específicas
+
 ```php
 <?php
 
 declare(strict_types=1);
 
+use JDR\Rector\PdoToQb\PdoToQueryBuilderRector;
 use Rector\Config\RectorConfig;
-use App\Rector\Doctrine\PdoToQueryBuilderRector;
-use App\Rector\Doctrine\PdoExecuteToQueryBuilderRector;
 
 return static function (RectorConfig $rectorConfig): void {
     // Regla principal para convertir PDO a QueryBuilder
@@ -209,19 +210,19 @@ return static function (RectorConfig $rectorConfig): void {
 
 ```bash
 # Tests básicos
-vendor/bin/phpunit tests/Rector/Doctrine/PdoToQueryBuilderRectorTest.php
+vendor/bin/phpunit tests/PdoToQueryBuilderRectorTest.php
 
 # Tests de JOINs
-vendor/bin/phpunit tests/Rector/Doctrine/PdoToQueryBuilderRectorTest.php::testConvertJoinQueries
+vendor/bin/phpunit tests/PdoToQueryBuilderRectorTest.php::testConvertJoinQueries
 
 # Tests de condiciones complejas
-vendor/bin/phpunit tests/Rector/Doctrine/PdoToQueryBuilderRectorTest.php::testConvertComplexWhereConditions
+vendor/bin/phpunit tests/PdoToQueryBuilderRectorTest.php::testConvertComplexWhereConditions
 
 # Tests de paréntesis anidados
-vendor/bin/phpunit tests/Rector/Doctrine/PdoToQueryBuilderRectorTest.php::testConvertNestedConditionsWithParentheses
+vendor/bin/phpunit tests/PdoToQueryBuilderRectorTest.php::testConvertNestedConditionsWithParentheses
 
 # Todos los tests
-vendor/bin/phpunit tests/Rector/Doctrine/
+vendor/bin/phpunit tests/
 ```
 
 ## Debugging y troubleshooting
@@ -266,7 +267,7 @@ Para añadir nuevas funcionalidades:
 ## Ejecutar tests
 
 ```bash
-vendor/bin/phpunit tests/Rector/Doctrine/PdoToQueryBuilderRectorTest.php
+vendor/bin/phpunit tests/PdoToQueryBuilderRectorTest.php
 ```
 
 ## Contribuir

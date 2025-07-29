@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Rector\Doctrine\Parser;
+namespace JDR\Rector\PdoToQb\Parser;
 
 /**
  * Parser for SET clauses used in UPDATE and INSERT queries
@@ -11,7 +11,7 @@ readonly class SetClauseParser
 {
     private CommonSqlParser $commonParser;
 
-    public function __construct(CommonSqlParser $commonParser = null)
+    public function __construct(?CommonSqlParser $commonParser = null)
     {
         $this->commonParser = $commonParser ?? new CommonSqlParser();
     }

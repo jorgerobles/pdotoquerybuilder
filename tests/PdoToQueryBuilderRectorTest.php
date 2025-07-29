@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Tests\Rector\Doctrine;
+namespace JDR\Rector\PdoToQb\Tests;
 
 use Rector\Testing\PHPUnit\AbstractRectorTestCase;
 
@@ -21,7 +21,7 @@ final class PdoToQueryBuilderRectorTest extends AbstractRectorTestCase
 
     public static function provideDataForTest(): \Iterator
     {
-        return self::yieldFilesFromDirectory(__DIR__ . '/Fixture');
+        return self::yieldFilesFromDirectory(__DIR__ . '/Fixture','*.txt');
     }
 
     public function provideConfigFilePath(): string

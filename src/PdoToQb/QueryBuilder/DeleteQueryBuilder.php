@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace App\Rector\Doctrine\QueryBuilder;
+namespace JDR\Rector\PdoToQb\QueryBuilder;
 
 use PhpParser\Node\Expr\MethodCall;
-use App\Rector\Doctrine\Parser\CommonSqlParser;
+use JDR\Rector\PdoToQb\Parser\CommonSqlParser;
 
 /**
  * Refactored DELETE query builder using common utilities
@@ -16,8 +16,8 @@ readonly class DeleteQueryBuilder
     private QueryBuilderFactory $factory;
 
     public function __construct(
-        CommonSqlParser $commonParser = null,
-        QueryBuilderFactory $factory = null
+        ?CommonSqlParser $commonParser = null,
+        ?QueryBuilderFactory $factory = null
     ) {
         $this->commonParser = $commonParser ?? new CommonSqlParser();
         $this->factory = $factory ?? new QueryBuilderFactory();

@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-namespace App\Rector\Doctrine\Parser;
+namespace JDR\Rector\PdoToQb\Parser;
 
 use PhpParser\Node;
 use PhpParser\Node\Expr\BinaryOp\Concat;
 use PhpParser\Node\Expr\Variable;
-use PhpParser\Node\Scalar\String_;
 use PhpParser\Node\Scalar\Encapsed;
 use PhpParser\Node\Scalar\EncapsedStringPart;
+use PhpParser\Node\Scalar\String_;
 
 /**
  * Extracts SQL strings from different PHP node types

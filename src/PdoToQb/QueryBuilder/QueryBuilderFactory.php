@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-namespace App\Rector\Doctrine\QueryBuilder;
+namespace JDR\Rector\PdoToQb\QueryBuilder;
 
 use PhpParser\Node\Arg;
 use PhpParser\Node\Expr\MethodCall;
 use PhpParser\Node\Identifier;
-use PhpParser\Node\Scalar\String_;
 use PhpParser\Node\Scalar\LNumber;
-use App\Rector\Doctrine\Parser\CommonSqlParser;
+use PhpParser\Node\Scalar\String_;
+use JDR\Rector\PdoToQb\Parser\CommonSqlParser;
 
 /**
  * Factory for creating QueryBuilder method calls

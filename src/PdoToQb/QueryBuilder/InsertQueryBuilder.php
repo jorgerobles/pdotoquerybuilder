@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace App\Rector\Doctrine\QueryBuilder;
+namespace JDR\Rector\PdoToQb\QueryBuilder;
 
 use PhpParser\Node\Expr\MethodCall;
-use App\Rector\Doctrine\Parser\CommonSqlParser;
-use App\Rector\Doctrine\Parser\SetClauseParser;
+use JDR\Rector\PdoToQb\Parser\CommonSqlParser;
+use JDR\Rector\PdoToQb\Parser\SetClauseParser;
 
 /**
  * Refactored INSERT query builder using common utilities
@@ -18,9 +18,9 @@ readonly class InsertQueryBuilder
     private QueryBuilderFactory $factory;
 
     public function __construct(
-        CommonSqlParser $commonParser = null,
-        SetClauseParser $setParser = null,
-        QueryBuilderFactory $factory = null
+        ?CommonSqlParser $commonParser = null,
+        ?SetClauseParser $setParser = null,
+        ?QueryBuilderFactory $factory = null
     ) {
         $this->commonParser = $commonParser ?? new CommonSqlParser();
         $this->setParser = $setParser ?? new SetClauseParser($this->commonParser);

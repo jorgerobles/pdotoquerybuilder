@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Rector\Doctrine\Parser;
+namespace JDR\Rector\PdoToQb\Parser;
 
 /**
  * Common SQL parsing utilities shared across different query builders

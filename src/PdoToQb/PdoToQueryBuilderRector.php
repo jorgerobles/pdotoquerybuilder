@@ -2,24 +2,24 @@
 
 declare(strict_types=1);
 
-namespace App\Rector\Doctrine;
+namespace JDR\Rector\PdoToQb;
 
 use PhpParser\Node;
 use PhpParser\Node\Expr\MethodCall;
-use PhpParser\Node\Expr\Variable;
 use PhpParser\Node\Expr\PropertyFetch;
+use PhpParser\Node\Expr\Variable;
 use PhpParser\Node\Identifier;
-use Rector\Rector\AbstractRector;
 use Rector\Contract\Rector\ConfigurableRectorInterface;
+use Rector\Rector\AbstractRector;
+use JDR\Rector\PdoToQb\Parser\CommonSqlParser;
+use JDR\Rector\PdoToQb\Parser\SqlExtractor;
+use JDR\Rector\PdoToQb\QueryBuilder\DeleteQueryBuilder;
+use JDR\Rector\PdoToQb\QueryBuilder\InsertQueryBuilder;
+use JDR\Rector\PdoToQb\QueryBuilder\QueryBuilderFactory;
+use JDR\Rector\PdoToQb\QueryBuilder\SelectQueryBuilder;
+use JDR\Rector\PdoToQb\QueryBuilder\UpdateQueryBuilder;
 use Symplify\RuleDocGenerator\ValueObject\CodeSample\CodeSample;
 use Symplify\RuleDocGenerator\ValueObject\RuleDefinition;
-use App\Rector\Doctrine\QueryBuilder\SelectQueryBuilder;
-use App\Rector\Doctrine\QueryBuilder\InsertQueryBuilder;
-use App\Rector\Doctrine\QueryBuilder\UpdateQueryBuilder;
-use App\Rector\Doctrine\QueryBuilder\DeleteQueryBuilder;
-use App\Rector\Doctrine\QueryBuilder\QueryBuilderFactory;
-use App\Rector\Doctrine\Parser\SqlExtractor;
-use App\Rector\Doctrine\Parser\CommonSqlParser;
 
 /**
  * Main Rector rule that converts PDO queries to Doctrine QueryBuilder
@@ -37,7 +37,7 @@ final class PdoToQueryBuilderRector extends AbstractRector implements Configurab
 
     public function __construct(
         private array $pdoVariableNames = ['pdo', 'db', 'connection'],
-        private string $connectionProperty = 'connection'
+        private string $connectionClause = 'connection'
     ) {
         $this->sqlExtractor = new SqlExtractor();
         $this->commonParser = new CommonSqlParser();
@@ -56,7 +56,7 @@ final class PdoToQueryBuilderRector extends AbstractRector implements Configurab
     public function configure(array $configuration): void
     {
         $this->pdoVariableNames = $configuration['pdoVariableNames'] ?? ['pdo', 'db', 'connection'];
-        $this->connectionProperty = $configuration['connectionProperty'] ?? 'connection';
+        $this->connectionClause = $configuration['connectionClause'] ?? 'connection';
     }
 
     public function getRuleDefinition(): RuleDefinition
@@ -228,12 +228,12 @@ final class PdoToQueryBuilderRector extends AbstractRector implements Configurab
 
     private function createBaseQueryBuilder(): MethodCall
     {
-        // Detect if connectionProperty is a method (has parentheses) or property
-        $isMethod = str_contains($this->connectionProperty, '()');
+        // Detect if connectionClause is a method (has parentheses) or property
+        $isMethod = str_contains($this->connectionClause, '()');
 
         if ($isMethod) {
             // Remove parentheses to get method name
-            $methodName = str_replace('()', '', $this->connectionProperty);
+            $methodName = str_replace('()', '', $this->connectionClause);
 
             // Create method call: $this->getConnection()->createQueryBuilder()
             $connectionCall = new MethodCall(
@@ -244,7 +244,7 @@ final class PdoToQueryBuilderRector extends AbstractRector implements Configurab
             // Create property access: $this->connection->createQueryBuilder()
             $connectionCall = new PropertyFetch(
                 new Variable('this'),
-                new Identifier($this->connectionProperty)
+                new Identifier($this->connectionClause)
             );
         }
 
