@@ -64,17 +64,25 @@ class CommonSqlParser
         return $joins;
     }
 
+    private static int $globalParamCount = 0;
+
     /**
      * Convert positional parameters (?) to named parameters (:param1, :param2, etc.)
      */
     public function convertPositionalToNamedParams(string $sql): string
     {
-        static $globalParamCount = 0;
-
-        return preg_replace_callback('/\?/', function($matches) use (&$globalParamCount) {
-            $globalParamCount++;
-            return ":param$globalParamCount";
+        return preg_replace_callback('/\?/', function($matches) {
+            self::$globalParamCount++;
+            return ":param" . self::$globalParamCount;
         }, $sql);
+    }
+
+    /**
+     * Reset parameter counter to start from :param1 for each new query
+     */
+    public function resetParameterCounter(): void
+    {
+        self::$globalParamCount = 0;
     }
 
     /**
@@ -92,6 +100,7 @@ class CommonSqlParser
 
             // Handle complex expressions like "CASE WHEN ... END"
             if (strtoupper($fieldName) === 'CASE') {
+                // Find the matching END
                 $caseExpression = $this->extractCaseExpression($field);
                 $fieldName = $caseExpression ?: $field;
                 $direction = 'ASC'; // Default for complex expressions
@@ -104,6 +113,17 @@ class CommonSqlParser
         }
 
         return $orderByFields;
+    }
+
+    /**
+     * Extract CASE...END expression from ORDER BY field
+     */
+    private function extractCaseExpression(string $field): ?string
+    {
+        if (preg_match('/CASE\s+.*?\s+END/i', $field, $matches)) {
+            return trim($matches[0]);
+        }
+        return null;
     }
 
     /**
@@ -477,16 +497,5 @@ class CommonSqlParser
         }
 
         return trim($condition) !== '' ? ['condition' => $condition] : null;
-    }
-
-    /**
-     * Extract CASE...END expression from ORDER BY field
-     */
-    private function extractCaseExpression(string $field): ?string
-    {
-        if (preg_match('/CASE\s+.*?\s+END/i', $field, $matches)) {
-            return trim($matches[0]);
-        }
-        return null;
     }
 }

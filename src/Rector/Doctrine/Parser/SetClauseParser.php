@@ -93,12 +93,13 @@ class SetClauseParser
 
     /**
      * Get next named parameter (:param1, :param2, etc.)
+     * Uses the same counter as CommonSqlParser for consistency
      */
     private function getNextNamedParameter(): string
     {
-        static $paramCount = 0;
-        $paramCount++;
-        return ":param$paramCount";
+        // Use CommonSqlParser's parameter conversion to maintain consistency
+        // Convert a single ? to get the next parameter name
+        return $this->commonParser->convertPositionalToNamedParams('?');
     }
 
     /**

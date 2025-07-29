@@ -6,6 +6,7 @@ namespace App\Rector\Doctrine\QueryBuilder;
 
 use PhpParser\Node\Expr\MethodCall;
 use App\Rector\Doctrine\Parser\CommonSqlParser;
+use App\Rector\Doctrine\Parser\WhereClauseParser;
 
 /**
  * Refactored DELETE query builder using common utilities
@@ -30,14 +31,15 @@ class DeleteQueryBuilder
 
         // DELETE FROM table
         if (!empty($parts['table'])) {
-            $queryBuilder = $this->factory->createMethodCall($queryBuilder, 'delete', [$parts['table']['table']]);
-
-            // Add table alias if present and different from table name
-            if ($parts['table']['hasExplicitAlias']) {
-                $queryBuilder = $this->factory->createMethodCall($queryBuilder, 'from', [
+            // For DELETE queries, if there's an alias and JOINs, pass alias to delete() method
+            if ($parts['table']['hasExplicitAlias'] && !empty($parts['joins'])) {
+                $queryBuilder = $this->factory->createMethodCall($queryBuilder, 'delete', [
                     $parts['table']['table'],
                     $parts['table']['alias']
                 ]);
+            } else {
+                // Simple DELETE without alias
+                $queryBuilder = $this->factory->createMethodCall($queryBuilder, 'delete', [$parts['table']['table']]);
             }
         }
 
@@ -70,20 +72,27 @@ class DeleteQueryBuilder
         $parts = [];
 
         // Handle different DELETE patterns:
-        // 1. DELETE FROM table
-        // 2. DELETE table FROM table JOIN ...
+        // 1. DELETE FROM table [alias]
+        // 2. DELETE alias FROM table alias JOIN ...
         // 3. DELETE t1, t2 FROM table1 t1 JOIN table2 t2 ...
 
-        // Pattern 1: Standard DELETE FROM table
+        // Pattern 1: Standard DELETE FROM table [AS alias]
         if (preg_match('/DELETE\s+FROM\s+(\w+)(?:\s+(?:AS\s+)?(\w+))?/i', $sql, $matches)) {
             $tableInfo = $this->commonParser->parseTableWithAlias($matches[1] . (isset($matches[2]) ? ' ' . $matches[2] : ''));
             $parts['table'] = $tableInfo;
         }
-        // Pattern 2: DELETE table FROM table (MySQL multi-table delete)
-        elseif (preg_match('/DELETE\s+(\w+(?:,\s*\w+)*)\s+FROM\s+(\w+)(?:\s+(?:AS\s+)?(\w+))?/i', $sql, $matches)) {
+        // Pattern 2: DELETE alias FROM table alias (MySQL multi-table delete)
+        elseif (preg_match('/DELETE\s+(\w+)(?:,\s*\w+)*\s+FROM\s+(\w+)(?:\s+(?:AS\s+)?(\w+))?/i', $sql, $matches)) {
             $parts['deleteTargets'] = array_map('trim', explode(',', $matches[1]));
+            // For multi-table DELETE, the main table info comes from the FROM clause
             $tableInfo = $this->commonParser->parseTableWithAlias($matches[2] . (isset($matches[3]) ? ' ' . $matches[3] : ''));
             $parts['table'] = $tableInfo;
+
+            // Ensure we recognize this has an alias for JOIN purposes
+            if (isset($matches[3]) || in_array($matches[1], [$matches[2]])) {
+                $parts['table']['hasExplicitAlias'] = true;
+                $parts['table']['alias'] = $matches[3] ?? $matches[1];
+            }
         }
 
         // Handle JOINs for multi-table deletes

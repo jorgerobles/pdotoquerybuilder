@@ -7,6 +7,7 @@ namespace App\Rector\Doctrine;
 use PhpParser\Node;
 use PhpParser\Node\Expr\MethodCall;
 use PhpParser\Node\Expr\Variable;
+use PhpParser\Node\Expr\PropertyFetch;
 use PhpParser\Node\Identifier;
 use Rector\Rector\AbstractRector;
 use Symplify\RuleDocGenerator\ValueObject\CodeSample\CodeSample;
@@ -66,6 +67,48 @@ final class PdoToQueryBuilderRector extends AbstractRector
                         ->andWhere('name = :param2')
                         ->executeQuery()
                         ->fetchAllAssociative();
+                    CODE_SAMPLE
+                ),
+                new CodeSample(
+                    <<<'CODE_SAMPLE'
+                    $stmt = $pdo->prepare("
+                        SELECT p.*, u.name as author_name
+                        FROM posts p
+                        INNER JOIN users u ON p.user_id = u.id
+                        WHERE p.published = ? AND u.active = ?
+                        ORDER BY p.created_at DESC
+                        LIMIT 10
+                    ");
+                    $stmt->execute([1, 1]);
+                    $posts = $stmt->fetchAll();
+                    CODE_SAMPLE
+                    ,
+                    <<<'CODE_SAMPLE'
+                    $posts = $this->connection->createQueryBuilder()
+                        ->select('p.*, u.name as author_name')
+                        ->from('posts', 'p')
+                        ->innerJoin('p', 'users', 'u', 'p.user_id = u.id')
+                        ->where('p.published = :param1')
+                        ->andWhere('u.active = :param2')
+                        ->addOrderBy('p.created_at', 'DESC')
+                        ->setMaxResults(10)
+                        ->executeQuery()
+                        ->fetchAllAssociative();
+                    CODE_SAMPLE
+                ),
+                new CodeSample(
+                    <<<'CODE_SAMPLE'
+                    $stmt = $pdo->prepare("UPDATE users SET status = ?, updated_at = NOW() WHERE id = ?");
+                    $stmt->execute(['active', $userId]);
+                    CODE_SAMPLE
+                    ,
+                    <<<'CODE_SAMPLE'
+                    $this->connection->createQueryBuilder()
+                        ->update('users')
+                        ->set('status', ':param1')
+                        ->set('updated_at', 'NOW()')
+                        ->where('id = :param2')
+                        ->executeStatement();
                     CODE_SAMPLE
                 ),
             ]
@@ -150,6 +193,9 @@ final class PdoToQueryBuilderRector extends AbstractRector
         $sql = $this->commonParser->normalizeSql($sql);
         $sqlUpper = strtoupper($sql);
 
+        // Reset parameter counter for each query to ensure consistent numbering
+        $this->commonParser->resetParameterCounter();
+
         // Crear el QueryBuilder base
         $baseQueryBuilder = $this->createBaseQueryBuilder();
 
@@ -166,7 +212,7 @@ final class PdoToQueryBuilderRector extends AbstractRector
     private function createBaseQueryBuilder(): MethodCall
     {
         return new MethodCall(
-            new MethodCall(
+            new PropertyFetch(
                 new Variable('this'),
                 new Identifier('connection')
             ),

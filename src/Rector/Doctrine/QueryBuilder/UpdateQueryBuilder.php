@@ -6,6 +6,7 @@ namespace App\Rector\Doctrine\QueryBuilder;
 
 use PhpParser\Node\Expr\MethodCall;
 use App\Rector\Doctrine\Parser\CommonSqlParser;
+use App\Rector\Doctrine\Parser\WhereClauseParser;
 use App\Rector\Doctrine\Parser\SetClauseParser;
 
 /**
@@ -34,14 +35,15 @@ class UpdateQueryBuilder
 
         // UPDATE table
         if (!empty($parts['table'])) {
-            $queryBuilder = $this->factory->createMethodCall($queryBuilder, 'update', [$parts['table']['table']]);
-
-            // Add table alias if present and different from table name
-            if ($parts['table']['hasExplicitAlias']) {
-                $queryBuilder = $this->factory->createMethodCall($queryBuilder, 'from', [
+            // For UPDATE queries, if there's an alias and JOINs, pass alias to update() method
+            if ($parts['table']['hasExplicitAlias'] && !empty($parts['joins'])) {
+                $queryBuilder = $this->factory->createMethodCall($queryBuilder, 'update', [
                     $parts['table']['table'],
                     $parts['table']['alias']
                 ]);
+            } else {
+                // Simple UPDATE without alias
+                $queryBuilder = $this->factory->createMethodCall($queryBuilder, 'update', [$parts['table']['table']]);
             }
         }
 
