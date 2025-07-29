@@ -1,5 +1,4 @@
 <?php
-
 declare(strict_types=1);
 
 namespace JDR\Rector\PdoToQb\QueryBuilder;
@@ -7,13 +6,12 @@ namespace JDR\Rector\PdoToQb\QueryBuilder;
 use PhpParser\Node\Arg;
 use PhpParser\Node\Expr\MethodCall;
 use PhpParser\Node\Identifier;
-use PhpParser\Node\Scalar\LNumber;
 use PhpParser\Node\Scalar\String_;
+use PhpParser\Node\Scalar\LNumber;
 use JDR\Rector\PdoToQb\Parser\CommonSqlParser;
 
 /**
  * Factory for creating QueryBuilder method calls
- * Eliminates duplication across different query builders
  */
 class QueryBuilderFactory
 {
@@ -41,26 +39,18 @@ class QueryBuilderFactory
      */
     public function addJoin(MethodCall $queryBuilder, array $join, string $mainTableAlias = 'main'): MethodCall
     {
-        $joinType = strtoupper(trim((string) $join['type']));
+        $joinType = strtoupper(trim($join['type']));
         $table = $join['table'];
         $alias = $join['alias'];
         $condition = $join['condition'];
 
-        switch (true) {
-            case strpos($joinType, 'LEFT') !== false:
-                $method = 'leftJoin';
-                break;
-            case strpos($joinType, 'RIGHT') !== false:
-                $method = 'rightJoin';
-                break;
-            case strpos($joinType, 'INNER') !== false:
-                $method = 'innerJoin';
-                break;
-            case strpos($joinType, 'CROSS') !== false:
-            default:
-                $method = 'join';
-                break;
-        }
+        $method = match (true) {
+            str_contains($joinType, 'LEFT') => 'leftJoin',
+            str_contains($joinType, 'RIGHT') => 'rightJoin',
+            str_contains($joinType, 'INNER') => 'innerJoin',
+            str_contains($joinType, 'CROSS') => 'join',
+            default => 'join'
+        };
 
         return $this->createMethodCall($queryBuilder, $method, [
             $mainTableAlias,
@@ -146,15 +136,12 @@ class QueryBuilderFactory
      */
     public function addWhere(MethodCall $queryBuilder, string $whereClause, CommonSqlParser $commonParser): MethodCall
     {
-        // Use CommonSqlParser to split conditions
         $conditions = $commonParser->splitWhereConditions($whereClause);
 
-        // Apply the first condition with where()
         if ($conditions !== []) {
             $firstCondition = array_shift($conditions);
             $queryBuilder = $this->createMethodCall($queryBuilder, 'where', [$firstCondition['condition']]);
 
-            // Apply remaining conditions with andWhere() or orWhere()
             foreach ($conditions as $condition) {
                 $method = $condition['operator'] === 'OR' ? 'orWhere' : 'andWhere';
                 $queryBuilder = $this->createMethodCall($queryBuilder, $method, [$condition['condition']]);
@@ -166,7 +153,6 @@ class QueryBuilderFactory
 
     /**
      * Add WHERE clause from SQL query
-     * Extracts WHERE clause and builds QueryBuilder methods
      */
     public function addWhereFromSql(MethodCall $queryBuilder, string $sql, CommonSqlParser $commonParser): MethodCall
     {

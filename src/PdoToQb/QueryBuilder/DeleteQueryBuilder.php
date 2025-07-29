@@ -1,5 +1,4 @@
 <?php
-
 declare(strict_types=1);
 
 namespace JDR\Rector\PdoToQb\QueryBuilder;
@@ -12,18 +11,12 @@ use JDR\Rector\PdoToQb\Parser\CommonSqlParser;
  */
 class DeleteQueryBuilder
 {
-    /**
-     * @readonly
-     */
     private CommonSqlParser $commonParser;
-    /**
-     * @readonly
-     */
     private QueryBuilderFactory $factory;
 
     public function __construct(
-        ?CommonSqlParser $commonParser = null,
-        ?QueryBuilderFactory $factory = null
+        CommonSqlParser $commonParser = null,
+        QueryBuilderFactory $factory = null
     ) {
         $this->commonParser = $commonParser ?? new CommonSqlParser();
         $this->factory = $factory ?? new QueryBuilderFactory();
@@ -34,7 +27,7 @@ class DeleteQueryBuilder
         $sql = $this->commonParser->normalizeSql($sql);
         $parts = $this->parseDeleteQuery($sql);
 
-        // DELETE FROM table with optional alias
+        // DELETE FROM table
         if (!empty($parts['table'])) {
             // For DELETE queries, if there's an alias and JOINs, pass alias to delete() method
             if ($parts['table']['hasExplicitAlias'] && !empty($parts['joins'])) {
@@ -50,13 +43,13 @@ class DeleteQueryBuilder
 
         // Handle multi-table deletes with JOINs
         if (!empty($parts['joins'])) {
-            $mainTableAlias = $parts['table']['alias'] ?? $parts['table']['table'] ?? 'main';
+            $mainTableAlias = $parts['table']['alias'] ?? 'main';
             foreach ($parts['joins'] as $join) {
                 $queryBuilder = $this->factory->addJoin($queryBuilder, $join, $mainTableAlias);
             }
         }
 
-        // WHERE clause - now handled by QueryBuilderFactory
+        // WHERE clause
         if (!empty($parts['where'])) {
             $queryBuilder = $this->factory->addWhere($queryBuilder, $parts['where'], $this->commonParser);
         }
@@ -76,11 +69,6 @@ class DeleteQueryBuilder
     {
         $parts = [];
 
-        // Handle different DELETE patterns:
-        // 1. DELETE FROM table [alias]
-        // 2. DELETE alias FROM table alias JOIN ...
-        // 3. DELETE t1, t2 FROM table1 t1 JOIN table2 t2 ...
-
         // Pattern 1: Standard DELETE FROM table [AS alias]
         if (preg_match('/DELETE\s+FROM\s+(\w+)(?:\s+(?:AS\s+)?(\w+))?/i', $sql, $matches)) {
             $tableInfo = $this->commonParser->parseTableWithAlias($matches[1] . (isset($matches[2]) ? ' ' . $matches[2] : ''));
@@ -89,11 +77,9 @@ class DeleteQueryBuilder
         // Pattern 2: DELETE alias FROM table alias (MySQL multi-table delete)
         elseif (preg_match('/DELETE\s+(\w+)(?:,\s*\w+)*\s+FROM\s+(\w+)(?:\s+(?:AS\s+)?(\w+))?/i', $sql, $matches)) {
             $parts['deleteTargets'] = array_map('trim', explode(',', $matches[1]));
-            // For multi-table DELETE, the main table info comes from the FROM clause
             $tableInfo = $this->commonParser->parseTableWithAlias($matches[2] . (isset($matches[3]) ? ' ' . $matches[3] : ''));
             $parts['table'] = $tableInfo;
 
-            // Ensure we recognize this has an alias for JOIN purposes
             if (isset($matches[3]) || $matches[1] === $matches[2]) {
                 $parts['table']['hasExplicitAlias'] = true;
                 $parts['table']['alias'] = $matches[3] ?? $matches[1];
@@ -103,7 +89,7 @@ class DeleteQueryBuilder
         // Handle JOINs for multi-table deletes
         $parts['joins'] = $this->commonParser->parseJoins($sql);
 
-        // WHERE clause - now parsed by CommonSqlParser
+        // WHERE clause
         $parts['where'] = $this->commonParser->parseWhere($sql);
 
         // ORDER BY clause (MySQL specific for DELETE)

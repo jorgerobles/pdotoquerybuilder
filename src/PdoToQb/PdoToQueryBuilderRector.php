@@ -4,13 +4,6 @@ declare(strict_types=1);
 
 namespace JDR\Rector\PdoToQb;
 
-use PhpParser\Node;
-use PhpParser\Node\Expr\MethodCall;
-use PhpParser\Node\Expr\PropertyFetch;
-use PhpParser\Node\Expr\Variable;
-use PhpParser\Node\Identifier;
-use Rector\Contract\Rector\ConfigurableRectorInterface;
-use Rector\Rector\AbstractRector;
 use JDR\Rector\PdoToQb\Parser\CommonSqlParser;
 use JDR\Rector\PdoToQb\Parser\SqlExtractor;
 use JDR\Rector\PdoToQb\QueryBuilder\DeleteQueryBuilder;
@@ -18,57 +11,40 @@ use JDR\Rector\PdoToQb\QueryBuilder\InsertQueryBuilder;
 use JDR\Rector\PdoToQb\QueryBuilder\QueryBuilderFactory;
 use JDR\Rector\PdoToQb\QueryBuilder\SelectQueryBuilder;
 use JDR\Rector\PdoToQb\QueryBuilder\UpdateQueryBuilder;
+use PhpParser\Node;
+use PhpParser\Node\Expr\MethodCall;
+use PhpParser\Node\Expr\PropertyFetch;
+use PhpParser\Node\Expr\Variable;
+use PhpParser\Node\Identifier;
+use Rector\Contract\Rector\ConfigurableRectorInterface;
+use Rector\Rector\AbstractRector;
 use Symplify\RuleDocGenerator\ValueObject\CodeSample\CodeSample;
 use Symplify\RuleDocGenerator\ValueObject\RuleDefinition;
 
 /**
  * Main Rector rule that converts PDO queries to Doctrine QueryBuilder
- * Now configurable with custom variable names and connection methods
  */
 final class PdoToQueryBuilderRector extends AbstractRector implements ConfigurableRectorInterface
 {
-    private array $pdoVariableNames = ['pdo', 'db', 'connection'];
-    private string $connectionClause = 'connection';
-    /**
-     * @readonly
-     */
     private SqlExtractor $sqlExtractor;
-    /**
-     * @readonly
-     */
     private CommonSqlParser $commonParser;
-    /**
-     * @readonly
-     */
     private QueryBuilderFactory $factory;
-    /**
-     * @readonly
-     */
     private SelectQueryBuilder $selectBuilder;
-    /**
-     * @readonly
-     */
     private InsertQueryBuilder $insertBuilder;
-    /**
-     * @readonly
-     */
     private UpdateQueryBuilder $updateBuilder;
-    /**
-     * @readonly
-     */
     private DeleteQueryBuilder $deleteBuilder;
 
-    public function __construct(
-        array $pdoVariableNames = ['pdo', 'db', 'connection'],
-        string $connectionClause = 'connection'
-    ) {
-        $this->pdoVariableNames = $pdoVariableNames;
-        $this->connectionClause = $connectionClause;
+    // Configuration properties
+    private array $pdoVariableNames = ['pdo', 'db', 'connection'];
+    private string $connectionProperty = 'connection';
+    private array $commonVarNames = ['query', 'stmt', 'statement', 'result', 'q'];
+
+    public function __construct()
+    {
         $this->sqlExtractor = new SqlExtractor();
         $this->commonParser = new CommonSqlParser();
         $this->factory = new QueryBuilderFactory();
 
-        // Initialize builders with shared dependencies
         $this->selectBuilder = new SelectQueryBuilder($this->commonParser, $this->factory);
         $this->insertBuilder = new InsertQueryBuilder($this->commonParser, null, $this->factory);
         $this->updateBuilder = new UpdateQueryBuilder($this->commonParser, null, $this->factory);
@@ -81,13 +57,14 @@ final class PdoToQueryBuilderRector extends AbstractRector implements Configurab
     public function configure(array $configuration): void
     {
         $this->pdoVariableNames = $configuration['pdoVariableNames'] ?? ['pdo', 'db', 'connection'];
-        $this->connectionClause = $configuration['connectionClause'] ?? 'connection';
+        $this->connectionProperty = $configuration['connectionProperty'] ?? 'connection';
+        $this->commonVarNames = $configuration['commonVarNames'] ?? ['query', 'stmt', 'statement', 'result', 'q'];
     }
 
     public function getRuleDefinition(): RuleDefinition
     {
         return new RuleDefinition(
-            'Convierte consultas PDO a QueryBuilder de Doctrine/DBAL usando componentes refactorizados',
+            'Convierte consultas PDO a QueryBuilder de Doctrine/DBAL',
             [
                 new CodeSample(
                     <<<'CODE_SAMPLE'
@@ -104,48 +81,6 @@ final class PdoToQueryBuilderRector extends AbstractRector implements Configurab
                         ->andWhere('name = :param2')
                         ->executeQuery()
                         ->fetchAllAssociative();
-                    CODE_SAMPLE
-                ),
-                new CodeSample(
-                    <<<'CODE_SAMPLE'
-                    $stmt = $pdo->prepare("
-                        SELECT p.*, u.name as author_name
-                        FROM posts p
-                        INNER JOIN users u ON p.user_id = u.id
-                        WHERE p.published = ? AND u.active = ?
-                        ORDER BY p.created_at DESC
-                        LIMIT 10
-                    ");
-                    $stmt->execute([1, 1]);
-                    $posts = $stmt->fetchAll();
-                    CODE_SAMPLE
-                    ,
-                    <<<'CODE_SAMPLE'
-                    $posts = $this->connection->createQueryBuilder()
-                        ->select('p.*, u.name as author_name')
-                        ->from('posts', 'p')
-                        ->innerJoin('p', 'users', 'u', 'p.user_id = u.id')
-                        ->where('p.published = :param1')
-                        ->andWhere('u.active = :param2')
-                        ->addOrderBy('p.created_at', 'DESC')
-                        ->setMaxResults(10)
-                        ->executeQuery()
-                        ->fetchAllAssociative();
-                    CODE_SAMPLE
-                ),
-                new CodeSample(
-                    <<<'CODE_SAMPLE'
-                    $stmt = $pdo->prepare("UPDATE users SET status = ?, updated_at = NOW() WHERE id = ?");
-                    $stmt->execute(['active', $userId]);
-                    CODE_SAMPLE
-                    ,
-                    <<<'CODE_SAMPLE'
-                    $this->connection->createQueryBuilder()
-                        ->update('users')
-                        ->set('status', ':param1')
-                        ->set('updated_at', 'NOW()')
-                        ->where('id = :param2')
-                        ->executeStatement();
                     CODE_SAMPLE
                 ),
             ]
@@ -173,8 +108,14 @@ final class PdoToQueryBuilderRector extends AbstractRector implements Configurab
             return $this->convertPdoQueryToQueryBuilder($node);
         }
 
+        // Detectar métodos en variables que fueron convertidas de PDO prepare()
+        if ($this->isPotentialQueryBuilderMethod($node)) {
+            return $this->convertQueryBuilderMethod($node);
+        }
+
         return null;
     }
+
 
     private function isPdoVariable($var): bool
     {
@@ -182,7 +123,6 @@ final class PdoToQueryBuilderRector extends AbstractRector implements Configurab
             return false;
         }
 
-        // Check against configured PDO variable names
         foreach ($this->pdoVariableNames as $variableName) {
             if ($this->isName($var, $variableName)) {
                 return true;
@@ -219,10 +159,9 @@ final class PdoToQueryBuilderRector extends AbstractRector implements Configurab
 
         $queryBuilder = $this->buildQueryBuilderFromSql($sql);
 
-        // Para query(), añadir executeQuery() al final para SELECT o executeStatement() para otros
         if ($queryBuilder instanceof MethodCall) {
             $sqlUpper = strtoupper(trim($sql));
-            $executeMethod = strncmp($sqlUpper, 'SELECT', strlen('SELECT')) === 0 ? 'executeQuery' : 'executeStatement';
+            $executeMethod = str_starts_with($sqlUpper, 'SELECT') ? 'executeQuery' : 'executeStatement';
 
             return new MethodCall($queryBuilder, new Identifier($executeMethod));
         }
@@ -235,51 +174,135 @@ final class PdoToQueryBuilderRector extends AbstractRector implements Configurab
         $sql = $this->commonParser->normalizeSql($sql);
         $sqlUpper = strtoupper($sql);
 
-        // Reset parameter counter for each query to ensure consistent numbering
+        // Reset parameter counter for each query
         $this->commonParser->resetParameterCounter();
 
-        // Crear el QueryBuilder base
         $baseQueryBuilder = $this->createBaseQueryBuilder();
-        if (strncmp($sqlUpper, 'SELECT', strlen('SELECT')) === 0) {
-            return $this->selectBuilder->build($baseQueryBuilder, $sql);
-        }
-        if (strncmp($sqlUpper, 'INSERT', strlen('INSERT')) === 0) {
-            return $this->insertBuilder->build($baseQueryBuilder, $sql);
-        }
-        if (strncmp($sqlUpper, 'UPDATE', strlen('UPDATE')) === 0) {
-            return $this->updateBuilder->build($baseQueryBuilder, $sql);
-        }
-        if (strncmp($sqlUpper, 'DELETE', strlen('DELETE')) === 0) {
-            return $this->deleteBuilder->build($baseQueryBuilder, $sql);
-        }
-        return null;
+
+        return match (true) {
+            str_starts_with($sqlUpper, 'SELECT') => $this->selectBuilder->build($baseQueryBuilder, $sql),
+            str_starts_with($sqlUpper, 'INSERT') => $this->insertBuilder->build($baseQueryBuilder, $sql),
+            str_starts_with($sqlUpper, 'UPDATE') => $this->updateBuilder->build($baseQueryBuilder, $sql),
+            str_starts_with($sqlUpper, 'DELETE') => $this->deleteBuilder->build($baseQueryBuilder, $sql),
+            default => null,
+        };
     }
 
     private function createBaseQueryBuilder(): MethodCall
     {
-        // Detect if connectionClause is a method (has parentheses) or property
-        $isMethod = strpos($this->connectionClause, '()') !== false;
+        // Detect if connectionProperty is a method (has parentheses) or property
+        $isMethod = str_contains($this->connectionProperty, '()');
 
         if ($isMethod) {
-            // Remove parentheses to get method name
-            $methodName = str_replace('()', '', $this->connectionClause);
+            $methodName = str_replace('()', '', $this->connectionProperty);
 
-            // Create method call: $this->getConnection()->createQueryBuilder()
             $connectionCall = new MethodCall(
                 new Variable('this'),
                 new Identifier($methodName)
             );
         } else {
-            // Create property access: $this->connection->createQueryBuilder()
             $connectionCall = new PropertyFetch(
                 new Variable('this'),
-                new Identifier($this->connectionClause)
+                new Identifier($this->connectionProperty)
             );
         }
 
         return new MethodCall(
             $connectionCall,
             new Identifier('createQueryBuilder')
+        );
+    }
+
+    /**
+     * Check if this method call is potentially on a QueryBuilder variable
+     */
+    private function isPotentialQueryBuilderMethod(MethodCall $node): bool
+    {
+        if (!$node->var instanceof Variable) {
+            return false;
+        }
+
+        $commonQueryVarNames = $this->commonVarNames;
+
+        foreach ($commonQueryVarNames as $varName) {
+            if ($this->isName($node->var, $varName)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Convert QueryBuilder method calls (execute, fetch, etc.)
+     */
+    private function convertQueryBuilderMethod(MethodCall $node): ?MethodCall
+    {
+        $methodName = $this->getName($node->name);
+
+        return match ($methodName) {
+            'execute' => $this->convertExecuteMethod($node),
+            'fetch' => $this->convertFetchMethod($node),
+            'fetchAll' => $this->convertFetchAllMethod($node),
+            'fetchAssoc' => $this->convertFetchAssocMethod($node),
+            'fetchColumn' => $this->convertFetchColumnMethod($node),
+            default => null,
+        };
+    }
+
+    /**
+     * Convert $query->execute() to $query->executeQuery()
+     */
+    private function convertExecuteMethod(MethodCall $node): MethodCall
+    {
+        return new MethodCall(
+            $node->var,
+            new Identifier('executeQuery'),
+            $node->args
+        );
+    }
+
+    /**
+     * Convert $query->fetch() to $query->fetchAssociative()
+     */
+    private function convertFetchMethod(MethodCall $node): MethodCall
+    {
+        return new MethodCall(
+            $node->var,
+            new Identifier('fetchAssociative')
+        );
+    }
+
+    /**
+     * Convert $query->fetchAll() to $query->fetchAllAssociative()
+     */
+    private function convertFetchAllMethod(MethodCall $node): MethodCall
+    {
+        return new MethodCall(
+            $node->var,
+            new Identifier('fetchAllAssociative')
+        );
+    }
+
+    /**
+     * Convert $query->fetchAssoc() to $query->fetchAssociative()
+     */
+    private function convertFetchAssocMethod(MethodCall $node): MethodCall
+    {
+        return new MethodCall(
+            $node->var,
+            new Identifier('fetchAssociative')
+        );
+    }
+
+    /**
+     * Convert $query->fetchColumn() to $query->fetchOne()
+     */
+    private function convertFetchColumnMethod(MethodCall $node): MethodCall
+    {
+        return new MethodCall(
+            $node->var,
+            new Identifier('fetchOne')
         );
     }
 }

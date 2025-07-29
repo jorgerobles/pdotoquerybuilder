@@ -18,9 +18,9 @@ class UpdateQueryBuilder
     private QueryBuilderFactory $factory;
 
     public function __construct(
-        ?CommonSqlParser $commonParser = null,
-        ?SetClauseParser $setParser = null,
-        ?QueryBuilderFactory $factory = null
+        CommonSqlParser $commonParser = null,
+        SetClauseParser $setParser = null,
+        QueryBuilderFactory $factory = null
     ) {
         $this->commonParser = $commonParser ?? new CommonSqlParser();
         $this->factory = $factory ?? new QueryBuilderFactory();
@@ -32,7 +32,7 @@ class UpdateQueryBuilder
         $sql = $this->commonParser->normalizeSql($sql);
         $parts = $this->parseUpdateQuery($sql);
 
-        // UPDATE table with optional alias
+        // UPDATE table
         if (!empty($parts['table'])) {
             // For UPDATE queries, if there's an alias and JOINs, pass alias to update() method
             if ($parts['table']['hasExplicitAlias'] && !empty($parts['joins'])) {
@@ -54,13 +54,13 @@ class UpdateQueryBuilder
 
         // JOINs (for multi-table updates)
         if (!empty($parts['joins'])) {
-            $mainTableAlias = $parts['table']['alias'] ?? $parts['table']['table'] ?? 'main';
+            $mainTableAlias = $parts['table']['alias'] ?? 'main';
             foreach ($parts['joins'] as $join) {
                 $queryBuilder = $this->factory->addJoin($queryBuilder, $join, $mainTableAlias);
             }
         }
 
-        // WHERE clause - now handled by QueryBuilderFactory
+        // WHERE clause
         if (!empty($parts['where'])) {
             $queryBuilder = $this->factory->addWhere($queryBuilder, $parts['where'], $this->commonParser);
         }
@@ -94,7 +94,7 @@ class UpdateQueryBuilder
             $parts['setClause'] = trim($matches[1]);
         }
 
-        // WHERE clause - now parsed by CommonSqlParser
+        // WHERE clause
         $parts['where'] = $this->commonParser->parseWhere($sql);
 
         // ORDER BY clause (MySQL specific for UPDATE)
