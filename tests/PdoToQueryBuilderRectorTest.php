@@ -21,7 +21,7 @@ final class PdoToQueryBuilderRectorTest extends AbstractRectorTestCase
 
     public static function provideDataForTest(): \Iterator
     {
-        return self::yieldFilesFromDirectory(__DIR__ . '/Fixture','*.txt');
+        return self::yieldFilesFromDirectory(__DIR__ . '/Fixture');
     }
 
     public function provideConfigFilePath(): string
