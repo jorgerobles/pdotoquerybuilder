@@ -46,14 +46,23 @@ class QueryBuilderFactory
         $alias = $join['alias'];
         $condition = $join['condition'];
 
-        // Determine the QueryBuilder method based on JOIN type
-        $method = match (true) {
-            str_contains($joinType, 'LEFT') => 'leftJoin',
-            str_contains($joinType, 'RIGHT') => 'rightJoin',
-            str_contains($joinType, 'INNER') => 'innerJoin',
-            str_contains($joinType, 'CROSS') => 'join',
-            default => 'join'
-        };
+        switch (true) {
+            case strpos($joinType, 'LEFT') !== false:
+                $method = 'leftJoin';
+                break;
+            case strpos($joinType, 'RIGHT') !== false:
+                $method = 'rightJoin';
+                break;
+            case strpos($joinType, 'INNER') !== false:
+                $method = 'innerJoin';
+                break;
+            case strpos($joinType, 'CROSS') !== false:
+                $method = 'join';
+                break;
+            default:
+                $method = 'join';
+                break;
+        }
 
         return $this->createMethodCall($queryBuilder, $method, [
             $mainTableAlias,

@@ -27,18 +27,43 @@ use Symplify\RuleDocGenerator\ValueObject\RuleDefinition;
  */
 final class PdoToQueryBuilderRector extends AbstractRector implements ConfigurableRectorInterface
 {
-    private readonly SqlExtractor $sqlExtractor;
-    private readonly CommonSqlParser $commonParser;
-    private readonly QueryBuilderFactory $factory;
-    private readonly SelectQueryBuilder $selectBuilder;
-    private readonly InsertQueryBuilder $insertBuilder;
-    private readonly UpdateQueryBuilder $updateBuilder;
-    private readonly DeleteQueryBuilder $deleteBuilder;
+    private array $pdoVariableNames = ['pdo', 'db', 'connection'];
+    private string $connectionClause = 'connection';
+    /**
+     * @readonly
+     */
+    private SqlExtractor $sqlExtractor;
+    /**
+     * @readonly
+     */
+    private CommonSqlParser $commonParser;
+    /**
+     * @readonly
+     */
+    private QueryBuilderFactory $factory;
+    /**
+     * @readonly
+     */
+    private SelectQueryBuilder $selectBuilder;
+    /**
+     * @readonly
+     */
+    private InsertQueryBuilder $insertBuilder;
+    /**
+     * @readonly
+     */
+    private UpdateQueryBuilder $updateBuilder;
+    /**
+     * @readonly
+     */
+    private DeleteQueryBuilder $deleteBuilder;
 
     public function __construct(
-        private array $pdoVariableNames = ['pdo', 'db', 'connection'],
-        private string $connectionClause = 'connection'
+        array $pdoVariableNames = ['pdo', 'db', 'connection'],
+        string $connectionClause = 'connection'
     ) {
+        $this->pdoVariableNames = $pdoVariableNames;
+        $this->connectionClause = $connectionClause;
         $this->sqlExtractor = new SqlExtractor();
         $this->commonParser = new CommonSqlParser();
         $this->factory = new QueryBuilderFactory();
@@ -197,7 +222,7 @@ final class PdoToQueryBuilderRector extends AbstractRector implements Configurab
         // Para query(), añadir executeQuery() al final para SELECT o executeStatement() para otros
         if ($queryBuilder instanceof MethodCall) {
             $sqlUpper = strtoupper(trim($sql));
-            $executeMethod = str_starts_with($sqlUpper, 'SELECT') ? 'executeQuery' : 'executeStatement';
+            $executeMethod = strncmp($sqlUpper, 'SELECT', strlen('SELECT')) === 0 ? 'executeQuery' : 'executeStatement';
 
             return new MethodCall($queryBuilder, new Identifier($executeMethod));
         }
@@ -216,20 +241,24 @@ final class PdoToQueryBuilderRector extends AbstractRector implements Configurab
         // Crear el QueryBuilder base
         $baseQueryBuilder = $this->createBaseQueryBuilder();
 
-        // Delegar a los builders específicos según el tipo de consulta
-        return match (true) {
-            str_starts_with($sqlUpper, 'SELECT') => $this->selectBuilder->build($baseQueryBuilder, $sql),
-            str_starts_with($sqlUpper, 'INSERT') => $this->insertBuilder->build($baseQueryBuilder, $sql),
-            str_starts_with($sqlUpper, 'UPDATE') => $this->updateBuilder->build($baseQueryBuilder, $sql),
-            str_starts_with($sqlUpper, 'DELETE') => $this->deleteBuilder->build($baseQueryBuilder, $sql),
-            default => null,
-        };
+        switch (true) {
+            case strncmp($sqlUpper, 'SELECT', strlen('SELECT')) === 0:
+                return $this->selectBuilder->build($baseQueryBuilder, $sql);
+            case strncmp($sqlUpper, 'INSERT', strlen('INSERT')) === 0:
+                return $this->insertBuilder->build($baseQueryBuilder, $sql);
+            case strncmp($sqlUpper, 'UPDATE', strlen('UPDATE')) === 0:
+                return $this->updateBuilder->build($baseQueryBuilder, $sql);
+            case strncmp($sqlUpper, 'DELETE', strlen('DELETE')) === 0:
+                return $this->deleteBuilder->build($baseQueryBuilder, $sql);
+            default:
+                return null;
+        }
     }
 
     private function createBaseQueryBuilder(): MethodCall
     {
         // Detect if connectionClause is a method (has parentheses) or property
-        $isMethod = str_contains($this->connectionClause, '()');
+        $isMethod = strpos($this->connectionClause, '()') !== false;
 
         if ($isMethod) {
             // Remove parentheses to get method name

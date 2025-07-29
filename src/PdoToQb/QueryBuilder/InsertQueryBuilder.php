@@ -11,10 +11,19 @@ use JDR\Rector\PdoToQb\Parser\SetClauseParser;
 /**
  * Refactored INSERT query builder using common utilities
  */
-readonly class InsertQueryBuilder
+class InsertQueryBuilder
 {
+    /**
+     * @readonly
+     */
     private CommonSqlParser $commonParser;
+    /**
+     * @readonly
+     */
     private SetClauseParser $setParser;
+    /**
+     * @readonly
+     */
     private QueryBuilderFactory $factory;
 
     public function __construct(

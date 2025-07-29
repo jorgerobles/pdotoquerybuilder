@@ -7,8 +7,11 @@ namespace JDR\Rector\PdoToQb\Parser;
 /**
  * Parser for SET clauses used in UPDATE and INSERT queries
  */
-readonly class SetClauseParser
+class SetClauseParser
 {
+    /**
+     * @readonly
+     */
     private CommonSqlParser $commonParser;
 
     public function __construct(?CommonSqlParser $commonParser = null)
@@ -66,7 +69,7 @@ readonly class SetClauseParser
     private function cleanColumnName(string $column): string
     {
         // Remove table prefix if present
-        if (str_contains($column, '.')) {
+        if (strpos($column, '.') !== false) {
             $columnParts = explode('.', $column);
             $column = end($columnParts);
         }

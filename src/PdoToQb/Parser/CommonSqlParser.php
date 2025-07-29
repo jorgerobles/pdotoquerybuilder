@@ -222,8 +222,9 @@ class CommonSqlParser
 
     /**
      * Find the position of a character at the top level (not inside quotes or parentheses)
+     * @return int|false
      */
-    public function findTopLevelPosition(string $str, string $searchChar): int|false
+    public function findTopLevelPosition(string $str, string $searchChar)
     {
         $depth = 0;
         $inQuotes = false;

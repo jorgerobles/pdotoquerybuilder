@@ -37,7 +37,7 @@ class SqlExtractor
         }
 
         // Log unsupported node types for debugging
-        error_log("SqlExtractor: Unsupported SQL node type: " . $node::class);
+        error_log("SqlExtractor: Unsupported SQL node type: " . get_class($node));
         return null;
     }
 
@@ -55,7 +55,7 @@ class SqlExtractor
                 $sql .= '?';
             } else {
                 // For other expressions, we can't easily convert - return null
-                error_log("SqlExtractor: Unsupported encapsed part type: " . $part::class);
+                error_log("SqlExtractor: Unsupported encapsed part type: " . get_class($part));
                 return null;
             }
         }

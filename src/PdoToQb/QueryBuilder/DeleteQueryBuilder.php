@@ -10,9 +10,15 @@ use JDR\Rector\PdoToQb\Parser\CommonSqlParser;
 /**
  * Refactored DELETE query builder using common utilities
  */
-readonly class DeleteQueryBuilder
+class DeleteQueryBuilder
 {
+    /**
+     * @readonly
+     */
     private CommonSqlParser $commonParser;
+    /**
+     * @readonly
+     */
     private QueryBuilderFactory $factory;
 
     public function __construct(

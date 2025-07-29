@@ -10,9 +10,15 @@ use JDR\Rector\PdoToQb\Parser\CommonSqlParser;
 /**
  * Refactored SELECT query builder using common utilities
  */
-readonly class SelectQueryBuilder
+class SelectQueryBuilder
 {
+    /**
+     * @readonly
+     */
     private CommonSqlParser $commonParser;
+    /**
+     * @readonly
+     */
     private QueryBuilderFactory $factory;
 
     public function __construct(
