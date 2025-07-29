@@ -11,7 +11,7 @@ return RectorConfig::configure()
         PdoToQueryBuilderRector::class,
     ])
     ->withPaths([
-        __DIR__ . '/temp',
+        __DIR__ . '/samples',
     ])
     // Enable proper imports and formatting
     ->withImportNames(

@@ -3,7 +3,7 @@
     "description": "Plugin Rector para convertir PDO a Doctrine QueryBuilder",
     "type": "project",
     "require": {
-        "php": "^7.4|^8.1"
+        "php": "^8.1"
     },
     "require-dev": {
         "rector/rector": "^1.0",
@@ -31,11 +31,19 @@
     "scripts": {
         "rector": "rector process",
         "rector-dry": "rector process --dry-run",
+        "rector-debug": "rector process --dry-run --debug",
         "test": "phpunit",
+        "test-select": "phpunit tests/Rector/Doctrine/SelectQueryBuilderTest.php",
+        "test-insert": "phpunit tests/Rector/Doctrine/InsertQueryBuilderTest.php",
+        "test-update": "phpunit tests/Rector/Doctrine/UpdateQueryBuilderTest.php",
+        "test-delete": "phpunit tests/Rector/Doctrine/DeleteQueryBuilderTest.php",
         "check": [
             "@rector-dry",
             "@test"
         ],
-        "install-deps": "composer install --optimize-autoloader"
+        "check-debug": [
+            "@rector-debug",
+            "@test"
+        ]
     }
 }
