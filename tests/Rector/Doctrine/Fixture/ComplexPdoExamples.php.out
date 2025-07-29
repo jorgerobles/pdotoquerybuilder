@@ -1,0 +1,167 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Tests\Rector\Doctrine\Fixture;
+
+class ComplexPdoExamples
+{
+    // Simple SELECT with WHERE
+    public function getActiveUsers()
+    {
+        return $this->connection()->createQueryBuilder()
+            ->select('*')
+            ->from('users', 'users')
+            ->where('status = :param1')
+            ->andWhere('age > :param2')
+            ->setParameter('param1', 'active')
+            ->setParameter('param2', 18)
+            ->executeQuery()
+            ->fetchAllAssociative();
+    }
+
+    // Complex JOIN query
+    public function getUsersWithOrders()
+    {
+        return $this->connection()->createQueryBuilder()
+            ->select('u.id, u.name, u.email, o.total, p.name as product_name')
+            ->from('users', 'u')
+            ->leftJoin('orders', 'o', 'u.id = o.user_id')
+            ->innerJoin('order_items', 'oi', 'o.id = oi.order_id')
+            ->innerJoin('products', 'p', 'oi.product_id = p.id')
+            ->where('u.status = :param1')
+            ->andWhere('o.created_at > :param2')
+            ->addOrderBy('o.created_at', 'DESC')
+            ->addOrderBy('u.name', 'ASC')
+            ->setMaxResults(50)
+            ->setFirstResult(10)
+            ->setParameter('param1', 'active')
+            ->setParameter('param2', '2023-01-01')
+            ->executeQuery()
+            ->fetchAllAssociative();
+    }
+
+    // INSERT statement
+    public function createUser($name, $email, $age)
+    {
+        return $this->connection()->createQueryBuilder()
+            ->insert('users')
+            ->setValue('name', ':param1')
+            ->setValue('email', ':param2')
+            ->setValue('age', ':param3')
+            ->setValue('status', ':param4')
+            ->setValue('created_at', 'NOW()')
+            ->setParameter('param1', $name)
+            ->setParameter('param2', $email)
+            ->setParameter('param3', $age)
+            ->setParameter('param4', 'active')
+            ->executeQuery();
+    }
+
+    // UPDATE statement
+    public function updateUserStatus($userId, $status)
+    {
+        return $this->connection()->createQueryBuilder()
+            ->update('users')
+            ->set('status', ':param1')
+            ->set('updated_at', 'NOW()')
+            ->where('id = :param2')
+            ->setParameter('param1', $status)
+            ->setParameter('param2', $userId)
+            ->executeQuery();
+    }
+
+    // DELETE statement
+    public function deleteInactiveUsers()
+    {
+        return $this->connection()->createQueryBuilder()
+            ->delete('users')
+            ->where('status = :param1')
+            ->andWhere('last_login < :param2')
+            ->setParameter('param1', 'inactive')
+            ->setParameter('param2', '2022-01-01')
+            ->executeQuery();
+    }
+
+    // Complex WHERE with OR conditions
+    public function searchUsers($term)
+    {
+        return $this->connection()->createQueryBuilder()
+            ->select('*')
+            ->from('users', 'users')
+            ->where('(name LIKE :param1 OR email LIKE :param2)')
+            ->andWhere('status IN (:param3)')
+            ->andWhere('(age BETWEEN 18 AND 65)')
+            ->addOrderBy('CASE WHEN name LIKE :param4 THEN 1 ELSE 2 END', 'ASC')
+            ->addOrderBy('name', 'ASC')
+            ->setParameter('param1', "%$term%")
+            ->setParameter('param2', "%$term%")
+            ->setParameter('param3', ['active', 'pending'])
+            ->setParameter('param4', "$term%")
+            ->executeQuery()
+            ->fetchAllAssociative();
+    }
+
+    // GROUP BY with HAVING
+    public function getUserStatistics()
+    {
+        return $this->connection()->createQueryBuilder()
+            ->select('status, COUNT(*) as user_count, AVG(age) as avg_age, MAX(created_at) as latest_signup')
+            ->from('users', 'users')
+            ->where('created_at > :param1')
+            ->addGroupBy('status')
+            ->having('user_count > 10')
+            ->addOrderBy('user_count', 'DESC')
+            ->setParameter('param1', '2023-01-01')
+            ->executeQuery()
+            ->fetchAllAssociative();
+    }
+
+    // Subquery example (simplified - subqueries need special handling)
+    public function getTopSpenders()
+    {
+        return $this->connection()->createQueryBuilder()
+            ->select('u.*, total_spent')
+            ->from('users', 'u')
+            ->innerJoin('u', '(SELECT user_id, SUM(total) as total_spent FROM orders WHERE status = :subparam1 GROUP BY user_id HAVING total_spent > :param1)', 'order_totals', 'u.id = order_totals.user_id')
+            ->addOrderBy('total_spent', 'DESC')
+            ->setMaxResults(':param2')
+            ->setParameter('param1', 1000)
+            ->setParameter('param2', 20)
+            ->setParameter('subparam1', 'completed')
+            ->executeQuery()
+            ->fetchAllAssociative();
+    }
+
+    // Direct query (no prepare)
+    public function getAllCategories()
+    {
+        return $this->connection()->createQueryBuilder()
+            ->select('id, name')
+            ->from('categories', 'categories')
+            ->addOrderBy('name', 'ASC')
+            ->executeQuery()
+            ->fetchAllAssociative();
+    }
+
+    // Multiple fetch methods
+    public function getSingleUser($id)
+    {
+        return $this->connection()->createQueryBuilder()
+            ->select('*')
+            ->from('users', 'users')
+            ->where('id = :param1')
+            ->setParameter('param1', $id)
+            ->executeQuery()
+            ->fetchAssociative();
+    }
+
+    public function getUserCount()
+    {
+        return $this->connection()->createQueryBuilder()
+            ->select('COUNT(*)')
+            ->from('users', 'users')
+            ->where('status = :param1')
+            ->setParameter('param1', 'active')
+            ->executeQuery()
+}

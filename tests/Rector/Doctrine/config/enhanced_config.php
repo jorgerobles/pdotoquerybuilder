@@ -7,4 +7,9 @@ use Rector\Config\RectorConfig;
 
 return static function (RectorConfig $rectorConfig): void {
     $rectorConfig->rule(StepByStepPdoRector::class);
+
+    // Optional: Add debugging for development
+    $rectorConfig->parallel();
+    $rectorConfig->importNames();
+    $rectorConfig->importShortClasses();
 };

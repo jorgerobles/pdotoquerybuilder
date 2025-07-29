@@ -1,0 +1,133 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Tests\Rector\Doctrine\Fixture;
+
+class ComplexPdoExamples
+{
+    // Simple SELECT with WHERE
+    public function getActiveUsers()
+    {
+        $stmt = $pdo->prepare("SELECT * FROM users WHERE status = ? AND age > ?");
+        $stmt->execute(['active', 18]);
+        return $stmt->fetchAll();
+    }
+
+    // Complex JOIN query
+    public function getUsersWithOrders()
+    {
+        $stmt = $pdo->prepare("
+            SELECT u.id, u.name, u.email, o.total, p.name as product_name
+            FROM users u
+            LEFT JOIN orders o ON u.id = o.user_id
+            INNER JOIN order_items oi ON o.id = oi.order_id
+            INNER JOIN products p ON oi.product_id = p.id
+            WHERE u.status = ? AND o.created_at > ?
+            ORDER BY o.created_at DESC, u.name ASC
+            LIMIT 50 OFFSET 10
+        ");
+        $stmt->execute(['active', '2023-01-01']);
+        return $stmt->fetchAll();
+    }
+
+    // INSERT statement
+    public function createUser($name, $email, $age)
+    {
+        $stmt = $pdo->prepare("INSERT INTO users (name, email, age, status, created_at) VALUES (?, ?, ?, 'active', NOW())");
+        $stmt->execute([$name, $email, $age]);
+        return $pdo->lastInsertId();
+    }
+
+    // UPDATE statement
+    public function updateUserStatus($userId, $status)
+    {
+        $stmt = $pdo->prepare("UPDATE users SET status = ?, updated_at = NOW() WHERE id = ?");
+        $stmt->execute([$status, $userId]);
+        return $stmt->rowCount();
+    }
+
+    // DELETE statement
+    public function deleteInactiveUsers()
+    {
+        $stmt = $pdo->prepare("DELETE FROM users WHERE status = ? AND last_login < ?");
+        $stmt->execute(['inactive', '2022-01-01']);
+        return $stmt->rowCount();
+    }
+
+    // Complex WHERE with OR conditions
+    public function searchUsers($term)
+    {
+        $stmt = $pdo->prepare("
+            SELECT * FROM users 
+            WHERE (name LIKE ? OR email LIKE ?) 
+            AND status IN ('active', 'pending') 
+            AND (age BETWEEN 18 AND 65)
+            ORDER BY CASE WHEN name LIKE ? THEN 1 ELSE 2 END, name
+        ");
+        $term = "%$term%";
+        $stmt->execute([$term, $term, "$term%"]);
+        return $stmt->fetchAll();
+    }
+
+    // GROUP BY with HAVING
+    public function getUserStatistics()
+    {
+        $stmt = $pdo->prepare("
+            SELECT 
+                status,
+                COUNT(*) as user_count,
+                AVG(age) as avg_age,
+                MAX(created_at) as latest_signup
+            FROM users 
+            WHERE created_at > ?
+            GROUP BY status
+            HAVING user_count > 10
+            ORDER BY user_count DESC
+        ");
+        $stmt->execute(['2023-01-01']);
+        return $stmt->fetchAll();
+    }
+
+    // Subquery example
+    public function getTopSpenders()
+    {
+        $stmt = $pdo->prepare("
+            SELECT u.*, total_spent
+            FROM users u
+            INNER JOIN (
+                SELECT user_id, SUM(total) as total_spent
+                FROM orders
+                WHERE status = 'completed'
+                GROUP BY user_id
+                HAVING total_spent > ?
+            ) order_totals ON u.id = order_totals.user_id
+            ORDER BY total_spent DESC
+            LIMIT ?
+        ");
+        $stmt->execute([1000, 20]);
+        return $stmt->fetchAll();
+    }
+
+    // Direct query (no prepare)
+    public function getAllCategories()
+    {
+        $result = $pdo->query("SELECT id, name FROM categories ORDER BY name");
+        return $result->fetchAll();
+    }
+
+    // Multiple fetch methods
+    public function getSingleUser($id)
+    {
+        $stmt = $pdo->prepare("SELECT * FROM users WHERE id = ?");
+        $stmt->execute([$id]);
+        return $stmt->fetch(); // Should convert to fetchAssociative()
+    }
+
+    public function getUserCount()
+    {
+        $stmt = $pdo->prepare("SELECT COUNT(*) FROM users WHERE status = ?");
+        $stmt->execute(['active']);
+        return $stmt->fetchColumn(); // Should convert to fetchOne()
+    }
+}

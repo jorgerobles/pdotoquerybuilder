@@ -3,11 +3,12 @@
     "description": "Plugin Rector para convertir PDO a Doctrine QueryBuilder",
     "type": "project",
     "require": {
-        "php": "^8.1"
+        "php": "^7.4|^8.1"
     },
     "require-dev": {
         "rector/rector": "^1.0",
-        "phpunit/phpunit": "^10.0"
+        "phpunit/phpunit": "^10.0",
+        "phpmyadmin/sql-parser": "^5.7"
     },
     "autoload": {
         "psr-4": {
@@ -35,6 +36,7 @@
         "check": [
             "@rector-dry",
             "@test"
-        ]
+        ],
+        "install-deps": "composer install --optimize-autoloader"
     }
 }

@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
+use App\Rector\Doctrine\StepByStepPdoRector;
 use Rector\Config\RectorConfig;
-use App\Rector\Doctrine\CompletePdoFlowRector;
 
 return RectorConfig::configure()
     ->withRules([
-        \App\Rector\Doctrine\StepByStepPdoRector::class,
+        StepByStepPdoRector::class,
     ])
     ->withPaths([
         __DIR__ . '/src',
