@@ -10,6 +10,7 @@ use PhpParser\Node\Expr\Variable;
 use PhpParser\Node\Expr\PropertyFetch;
 use PhpParser\Node\Identifier;
 use Rector\Rector\AbstractRector;
+use Rector\Contract\Rector\ConfigurableRectorInterface;
 use Symplify\RuleDocGenerator\ValueObject\CodeSample\CodeSample;
 use Symplify\RuleDocGenerator\ValueObject\RuleDefinition;
 use App\Rector\Doctrine\QueryBuilder\SelectQueryBuilder;
@@ -22,9 +23,9 @@ use App\Rector\Doctrine\Parser\CommonSqlParser;
 
 /**
  * Main Rector rule that converts PDO queries to Doctrine QueryBuilder
- * Now using refactored components with shared utilities
+ * Now configurable with custom variable names and connection methods
  */
-final class PdoToQueryBuilderRector extends AbstractRector
+final class PdoToQueryBuilderRector extends AbstractRector implements ConfigurableRectorInterface
 {
     private SqlExtractor $sqlExtractor;
     private CommonSqlParser $commonParser;
@@ -34,8 +35,17 @@ final class PdoToQueryBuilderRector extends AbstractRector
     private UpdateQueryBuilder $updateBuilder;
     private DeleteQueryBuilder $deleteBuilder;
 
-    public function __construct()
-    {
+    // Configuration properties
+    private array $pdoVariableNames;
+    private string $connectionProperty;
+
+    public function __construct(
+        array $pdoVariableNames = ['pdo', 'db', 'connection'],
+        string $connectionProperty = 'connection'
+    ) {
+        $this->pdoVariableNames = $pdoVariableNames;
+        $this->connectionProperty = $connectionProperty;
+
         $this->sqlExtractor = new SqlExtractor();
         $this->commonParser = new CommonSqlParser();
         $this->factory = new QueryBuilderFactory();
@@ -45,6 +55,15 @@ final class PdoToQueryBuilderRector extends AbstractRector
         $this->insertBuilder = new InsertQueryBuilder($this->commonParser, null, $this->factory);
         $this->updateBuilder = new UpdateQueryBuilder($this->commonParser, null, $this->factory);
         $this->deleteBuilder = new DeleteQueryBuilder($this->commonParser, $this->factory);
+    }
+
+    /**
+     * Configure the rector with custom settings
+     */
+    public function configure(array $configuration): void
+    {
+        $this->pdoVariableNames = $configuration['pdoVariableNames'] ?? ['pdo', 'db', 'connection'];
+        $this->connectionProperty = $configuration['connectionProperty'] ?? 'connection';
     }
 
     public function getRuleDefinition(): RuleDefinition
@@ -145,9 +164,14 @@ final class PdoToQueryBuilderRector extends AbstractRector
             return false;
         }
 
-        return $this->isName($var, 'pdo') ||
-            $this->isName($var, 'db') ||
-            $this->isName($var, 'connection');
+        // Check against configured PDO variable names
+        foreach ($this->pdoVariableNames as $variableName) {
+            if ($this->isName($var, $variableName)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function convertPdoPrepareToQueryBuilder(MethodCall $node): ?Node
@@ -211,11 +235,28 @@ final class PdoToQueryBuilderRector extends AbstractRector
 
     private function createBaseQueryBuilder(): MethodCall
     {
-        return new MethodCall(
-            new PropertyFetch(
+        // Detect if connectionProperty is a method (has parentheses) or property
+        $isMethod = str_contains($this->connectionProperty, '()');
+
+        if ($isMethod) {
+            // Remove parentheses to get method name
+            $methodName = str_replace('()', '', $this->connectionProperty);
+
+            // Create method call: $this->getConnection()->createQueryBuilder()
+            $connectionCall = new MethodCall(
                 new Variable('this'),
-                new Identifier('connection')
-            ),
+                new Identifier($methodName)
+            );
+        } else {
+            // Create property access: $this->connection->createQueryBuilder()
+            $connectionCall = new PropertyFetch(
+                new Variable('this'),
+                new Identifier($this->connectionProperty)
+            );
+        }
+
+        return new MethodCall(
+            $connectionCall,
             new Identifier('createQueryBuilder')
         );
     }

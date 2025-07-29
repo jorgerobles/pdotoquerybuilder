@@ -1,6 +1,6 @@
 <?php
 
-// Enhanced rector.php configuration for better formatting
+// Enhanced rector.php configuration with configurable parameters
 declare(strict_types=1);
 
 use App\Rector\Doctrine\PdoToQueryBuilderRector;
@@ -8,8 +8,34 @@ use Rector\Config\RectorConfig;
 
 return RectorConfig::configure()
     ->withRules([
+        // Default configuration
         PdoToQueryBuilderRector::class,
+
+        // Or with custom configuration:
+        // new PdoToQueryBuilderRector(
+        //     pdoVariableNames: ['pdo', 'db', 'connection', 'database'],
+        //     connectionProperty: 'getConnection()'  // Method with parentheses
+        // ),
     ])
+    ->withConfiguredRule(
+        PdoToQueryBuilderRector::class,
+        [
+            // Configuration for different project setups:
+
+            // Standard Doctrine DBAL setup
+            'pdoVariableNames' => ['pdo', 'db', 'connection'],
+            'connectionProperty' => 'connection',  // Property access
+
+            // Alternative configurations:
+            // For Symfony projects with EntityManager method
+            // 'pdoVariableNames' => ['pdo', 'db', 'connection', 'database'],
+            // 'connectionProperty' => 'getConnection()',  // Method call
+
+            // For projects with custom connection wrapper method
+            // 'pdoVariableNames' => ['database', 'dbConn', 'sqlConnection'],
+            // 'connectionProperty' => 'getDatabaseManager()',  // Method call
+        ]
+    )
     ->withPaths([
         __DIR__ . '/samples',
     ])
