@@ -20,7 +20,9 @@ return RectorConfig::configure()
     // Set up caching for faster subsequent runs
     ->withCache(__DIR__ . '/var/cache/rector')
     // Configure formatting options
-    ->withPhpSets(php81: true)
+    ->withSets([
+        DowngradeLevelSetList::DOWN_TO_PHP_74
+    ])
 
     // Add code quality rules that help with formatting
     ->withPreparedSets(

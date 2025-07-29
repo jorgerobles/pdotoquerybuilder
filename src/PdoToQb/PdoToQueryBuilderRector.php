@@ -161,7 +161,7 @@ final class PdoToQueryBuilderRector extends AbstractRector implements Configurab
 
         if ($queryBuilder instanceof MethodCall) {
             $sqlUpper = strtoupper(trim($sql));
-            $executeMethod = str_starts_with($sqlUpper, 'SELECT') ? 'executeQuery' : 'executeStatement';
+            $executeMethod = strncmp($sqlUpper, 'SELECT', strlen('SELECT')) === 0 ? 'executeQuery' : 'executeStatement';
 
             return new MethodCall($queryBuilder, new Identifier($executeMethod));
         }
@@ -179,19 +179,24 @@ final class PdoToQueryBuilderRector extends AbstractRector implements Configurab
 
         $baseQueryBuilder = $this->createBaseQueryBuilder();
 
-        return match (true) {
-            str_starts_with($sqlUpper, 'SELECT') => $this->selectBuilder->build($baseQueryBuilder, $sql),
-            str_starts_with($sqlUpper, 'INSERT') => $this->insertBuilder->build($baseQueryBuilder, $sql),
-            str_starts_with($sqlUpper, 'UPDATE') => $this->updateBuilder->build($baseQueryBuilder, $sql),
-            str_starts_with($sqlUpper, 'DELETE') => $this->deleteBuilder->build($baseQueryBuilder, $sql),
-            default => null,
-        };
+        switch (true) {
+            case strncmp($sqlUpper, 'SELECT', strlen('SELECT')) === 0:
+                return $this->selectBuilder->build($baseQueryBuilder, $sql);
+            case strncmp($sqlUpper, 'INSERT', strlen('INSERT')) === 0:
+                return $this->insertBuilder->build($baseQueryBuilder, $sql);
+            case strncmp($sqlUpper, 'UPDATE', strlen('UPDATE')) === 0:
+                return $this->updateBuilder->build($baseQueryBuilder, $sql);
+            case strncmp($sqlUpper, 'DELETE', strlen('DELETE')) === 0:
+                return $this->deleteBuilder->build($baseQueryBuilder, $sql);
+            default:
+                return null;
+        }
     }
 
     private function createBaseQueryBuilder(): MethodCall
     {
         // Detect if connectionProperty is a method (has parentheses) or property
-        $isMethod = str_contains($this->connectionProperty, '()');
+        $isMethod = strpos($this->connectionProperty, '()') !== false;
 
         if ($isMethod) {
             $methodName = str_replace('()', '', $this->connectionProperty);
@@ -240,14 +245,20 @@ final class PdoToQueryBuilderRector extends AbstractRector implements Configurab
     {
         $methodName = $this->getName($node->name);
 
-        return match ($methodName) {
-            'execute' => $this->convertExecuteMethod($node),
-            'fetch' => $this->convertFetchMethod($node),
-            'fetchAll' => $this->convertFetchAllMethod($node),
-            'fetchAssoc' => $this->convertFetchAssocMethod($node),
-            'fetchColumn' => $this->convertFetchColumnMethod($node),
-            default => null,
-        };
+        switch ($methodName) {
+            case 'execute':
+                return $this->convertExecuteMethod($node);
+            case 'fetch':
+                return $this->convertFetchMethod($node);
+            case 'fetchAll':
+                return $this->convertFetchAllMethod($node);
+            case 'fetchAssoc':
+                return $this->convertFetchAssocMethod($node);
+            case 'fetchColumn':
+                return $this->convertFetchColumnMethod($node);
+            default:
+                return null;
+        }
     }
 
     /**
