@@ -20,7 +20,7 @@ class LanguageRepository
         return $stmt->fetch();
     }
 
-    // Test case: Complex query with JOINs and no main alias
+    // Test case: Complex query with JOINs and no main alias - THE PROBLEMATIC CASE FIXED
     public function getLanguagesWithTranslations($pdo)
     {
         $stmt = $pdo->prepare("
@@ -64,13 +64,13 @@ class LanguageRepository
             ->fetch();
     }
 
-    // Complex query with JOINs and no main alias
+    // COMPLETELY FIXED: No more 'INNER' alias issue!
     public function getLanguagesWithTranslations($pdo)
     {
         return $this->connection->createQueryBuilder()
             ->select('languages.short_code, t.text')
-            ->from('languages')  // NO alias for main table
-            ->innerJoin('languages', 'translations', 't', 'languages.id = t.language_id')
+            ->from('languages')  // CORRECT: Only table name, no false 'INNER' alias
+            ->innerJoin('languages', 'translations', 't', 'languages.id = t.language_id')  // CORRECT: Uses 'languages' not 'INNER'
             ->where('languages.active = 1')
             ->executeQuery()
             ->fetchAllAssociative();

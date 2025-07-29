@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace JDR\Rector\PdoToQb\QueryBuilder;
@@ -7,16 +8,22 @@ use PhpParser\Node\Expr\MethodCall;
 use JDR\Rector\PdoToQb\Parser\CommonSqlParser;
 
 /**
- * Refactored SELECT query builder using common utilities
+ * FIXED: Improved SELECT query builder with better FROM clause parsing and alias handling
  */
 class SelectQueryBuilder
 {
+    /**
+     * @readonly
+     */
     private CommonSqlParser $commonParser;
+    /**
+     * @readonly
+     */
     private QueryBuilderFactory $factory;
 
     public function __construct(
-        CommonSqlParser $commonParser = null,
-        QueryBuilderFactory $factory = null
+        ?CommonSqlParser $commonParser = null,
+        ?QueryBuilderFactory $factory = null
     ) {
         $this->commonParser = $commonParser ?? new CommonSqlParser();
         $this->factory = $factory ?? new QueryBuilderFactory();
@@ -31,32 +38,31 @@ class SelectQueryBuilder
         $selectClause = $parts['select'] ?? '*';
         $queryBuilder = $this->factory->createMethodCall($queryBuilder, 'select', [$selectClause]);
 
-        // FROM clause with alias
+        // FROM clause with proper alias handling - FIXED
         if (!empty($parts['from'])) {
-            // Only add alias if it's explicitly different from table name
-            if ($parts['from']['hasExplicitAlias']) {
-                $queryBuilder = $this->factory->createMethodCall($queryBuilder, 'from', [
-                    $parts['from']['table'],
-                    $parts['from']['alias']
-                ]);
-            } else {
-                // No alias, just table name
-                $queryBuilder = $this->factory->createMethodCall($queryBuilder, 'from', [
-                    $parts['from']['table']  // ← Only table name, no alias
-                ]);
+            $fromArgs = [$parts['from']['table']];
+
+            // CRITICAL FIX: Only add alias if it actually exists and is not a JOIN keyword
+            if ($parts['from']['hasExplicitAlias'] && $parts['from']['alias'] !== null) {
+                $fromArgs[] = $parts['from']['alias'];
             }
+
+            $queryBuilder = $this->factory->createMethodCall($queryBuilder, 'from', $fromArgs);
         }
 
-        // JOINs
+        // JOINs - use proper main table reference
         if (!empty($parts['joins'])) {
-            // Use table name as main alias when no explicit alias exists
-            $mainTableAlias = $parts['from']['hasExplicitAlias'] ? $parts['from']['alias'] : $parts['from']['table'];
+            // FIXED: Use actual table name or alias for JOIN references
+            $mainTableAlias = $parts['from']['hasExplicitAlias'] && $parts['from']['alias'] !== null
+                ? $parts['from']['alias']
+                : $parts['from']['table'] ?? 'main';
+
             foreach ($parts['joins'] as $join) {
                 $queryBuilder = $this->factory->addJoin($queryBuilder, $join, $mainTableAlias);
             }
         }
 
-        // WHERE clause
+        // WHERE clause - now handled by QueryBuilderFactory
         if (!empty($parts['where'])) {
             $queryBuilder = $this->factory->addWhere($queryBuilder, $parts['where'], $this->commonParser);
         }
@@ -92,16 +98,16 @@ class SelectQueryBuilder
             $parts['select'] = trim($matches[1]);
         }
 
-        // FROM clause with alias
-        if (preg_match('/FROM\s+(\w+)(?:\s+(?:AS\s+)?(\w+))?/i', $sql, $matches)) {
-            $tableInfo = $this->commonParser->parseTableWithAlias($matches[1] . (isset($matches[2]) ? ' ' . $matches[2] : ''));
-            $parts['from'] = $tableInfo;
+        // FROM clause - using improved parser that handles WHERE clauses properly
+        $fromInfo = $this->commonParser->parseFromClause($sql);
+        if ($fromInfo !== null) {
+            $parts['from'] = $fromInfo;
         }
 
         // JOINs
         $parts['joins'] = $this->commonParser->parseJoins($sql);
 
-        // WHERE clause
+        // WHERE clause - now parsed by CommonSqlParser with better handling
         $parts['where'] = $this->commonParser->parseWhere($sql);
 
         // GROUP BY clause

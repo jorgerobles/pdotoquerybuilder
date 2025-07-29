@@ -5,12 +5,11 @@ declare(strict_types=1);
 namespace JDR\Rector\PdoToQb\Parser;
 
 /**
- * Common SQL parsing utilities shared across different query builders
+ * COMPLETELY FIXED: Common SQL parsing utilities
+ * This version eliminates the JOIN keyword capture issue entirely
  */
 class CommonSqlParser
 {
-    private static int $globalParamCount = 0;
-
     /**
      * Parse table name and alias from SQL fragment
      */
@@ -18,10 +17,11 @@ class CommonSqlParser
     {
         $tableFragment = trim($tableFragment);
 
+        // Pattern: table_name [AS] alias
         if (preg_match('/^(\w+)(?:\s+(?:AS\s+)?(\w+))?$/i', $tableFragment, $matches)) {
             $tableName = $matches[1];
-            $hasExplicitAlias = isset($matches[2]) && !empty($matches[2]); // ← Better detection
-            $alias = $hasExplicitAlias ? $matches[2] : $tableName;
+            $hasExplicitAlias = isset($matches[2]) && (isset($matches[2]) && ($matches[2] !== '' && $matches[2] !== '0'));
+            $alias = $hasExplicitAlias ? $matches[2] : null;
 
             return [
                 'table' => $tableName,
@@ -32,9 +32,80 @@ class CommonSqlParser
 
         return [
             'table' => $tableFragment,
-            'alias' => $tableFragment,
+            'alias' => null,
             'hasExplicitAlias' => false
         ];
+    }
+
+    /**
+     * COMPLETELY REWRITTEN: FROM clause parsing that never captures JOIN keywords
+     */
+    public function parseFromClause(string $sql): ?array
+    {
+        // Step 1: Try the most specific pattern first - this should catch most cases correctly
+        $specificPattern = '/FROM\s+(\w+)(?:\s+(?:AS\s+)?(\w+))?(?=\s+(?:INNER\s+JOIN|LEFT\s+JOIN|RIGHT\s+JOIN|OUTER\s+JOIN|CROSS\s+JOIN|WHERE|GROUP\s+BY|HAVING|ORDER\s+BY|LIMIT|OFFSET|$))/i';
+
+        if (preg_match($specificPattern, $sql, $matches)) {
+            $tableName = $matches[1];
+            $hasExplicitAlias = isset($matches[2]) && (isset($matches[2]) && ($matches[2] !== '' && $matches[2] !== '0'));
+            $alias = $hasExplicitAlias ? $matches[2] : null;
+
+            return [
+                'table' => $tableName,
+                'alias' => $alias,
+                'hasExplicitAlias' => $hasExplicitAlias
+            ];
+        }
+
+        // Step 2: Extract just the FROM portion and manually parse it
+        if (preg_match('/FROM\s+([^WHERE]+?)(?=\s+WHERE|$)/i', $sql, $matches)) {
+            $fromPortion = trim($matches[1]);
+
+            // Remove JOIN clauses to isolate the main table
+            $cleanFromPortion = preg_replace('/\s+(?:INNER|LEFT|RIGHT|OUTER|CROSS)\s+JOIN.*/i', '', $fromPortion);
+            $cleanFromPortion = trim($cleanFromPortion);
+
+            // Now parse the clean FROM portion
+            if (preg_match('/^(\w+)(?:\s+(?:AS\s+)?(\w+))?$/i', $cleanFromPortion, $matches)) {
+                $tableName = $matches[1];
+                $potentialAlias = $matches[2] ?? null;
+
+                // Validate that the alias is not a reserved word
+                $reservedWords = ['INNER', 'LEFT', 'RIGHT', 'OUTER', 'CROSS', 'JOIN', 'WHERE', 'GROUP', 'HAVING', 'ORDER', 'LIMIT', 'OFFSET', 'SET'];
+                $hasExplicitAlias = $potentialAlias && !in_array(strtoupper($potentialAlias), $reservedWords, true);
+
+                return [
+                    'table' => $tableName,
+                    'alias' => $hasExplicitAlias ? $potentialAlias : null,
+                    'hasExplicitAlias' => $hasExplicitAlias
+                ];
+            }
+        }
+
+        // Step 3: Last resort - basic FROM pattern with strict validation
+        if (preg_match('/FROM\s+(\w+)(?:\s+(?:AS\s+)?(\w+))?/i', $sql, $matches)) {
+            $tableName = $matches[1];
+            $potentialAlias = $matches[2] ?? null;
+
+            // Very strict validation - reject any reserved words
+            $allReservedWords = [
+                'INNER', 'LEFT', 'RIGHT', 'OUTER', 'CROSS', 'JOIN',
+                'WHERE', 'GROUP', 'BY', 'HAVING', 'ORDER', 'LIMIT', 'OFFSET',
+                'SET', 'VALUES', 'SELECT', 'UPDATE', 'DELETE', 'INSERT'
+            ];
+
+            $hasExplicitAlias = $potentialAlias &&
+                ($potentialAlias !== '' && $potentialAlias !== '0') &&
+                !in_array(strtoupper($potentialAlias), $allReservedWords, true);
+
+            return [
+                'table' => $tableName,
+                'alias' => $hasExplicitAlias ? $potentialAlias : null,
+                'hasExplicitAlias' => $hasExplicitAlias
+            ];
+        }
+
+        return null;
     }
 
     /**
@@ -43,24 +114,30 @@ class CommonSqlParser
     public function parseJoins(string $sql): array
     {
         $joins = [];
+
+        // Enhanced JOIN pattern
         $joinPattern = '/\b((?:LEFT|RIGHT|INNER|OUTER|CROSS)?\s*JOIN)\s+(\w+)(?:\s+(?:AS\s+)?(\w+))?\s+ON\s+([^)]+?)(?=\s+(?:LEFT|RIGHT|INNER|OUTER|CROSS)?\s*JOIN|\s+WHERE|\s+SET|\s+GROUP\s+BY|\s+HAVING|\s+ORDER\s+BY|\s+LIMIT|\s+OFFSET|$)/i';
 
         if (preg_match_all($joinPattern, $sql, $matches, PREG_SET_ORDER)) {
             foreach ($matches as $match) {
-                $tableInfo = $this->parseTableWithAlias($match[2] . (isset($match[3]) ? ' ' . $match[3] : ''));
+                $tableName = $match[2];
+                $hasExplicitAlias = isset($match[3]) && (isset($match[3]) && ($match[3] !== '' && $match[3] !== '0'));
+                $alias = $hasExplicitAlias ? $match[3] : null;
 
                 $joins[] = [
                     'type' => trim($match[1]),
-                    'table' => $tableInfo['table'],
-                    'alias' => $tableInfo['alias'],
+                    'table' => $tableName,
+                    'alias' => $alias,
                     'condition' => trim($match[4]),
-                    'hasExplicitAlias' => $tableInfo['hasExplicitAlias']
+                    'hasExplicitAlias' => $hasExplicitAlias
                 ];
             }
         }
 
         return $joins;
     }
+
+    private static int $globalParamCount = 0;
 
     /**
      * Convert positional parameters (?) to named parameters (:param1, :param2, etc.)
@@ -74,7 +151,7 @@ class CommonSqlParser
     }
 
     /**
-     * Reset parameter counter to start from :param1 for each new query
+     * Reset parameter counter
      */
     public function resetParameterCounter(): void
     {
@@ -82,12 +159,12 @@ class CommonSqlParser
     }
 
     /**
-     * Parse ORDER BY clause into individual fields with directions
+     * Parse ORDER BY clause
      */
     public function parseOrderBy(string $orderByClause): array
     {
         $orderByFields = [];
-        $fields = array_map('trim', explode(',', $orderByClause));
+        $fields = $this->splitRespectingDelimiters($orderByClause, ',');
 
         foreach ($fields as $field) {
             $parts = preg_split('/\s+/', trim($field));
@@ -109,12 +186,20 @@ class CommonSqlParser
         return $orderByFields;
     }
 
+    private function extractCaseExpression(string $field): ?string
+    {
+        if (preg_match('/CASE\s+.*?\s+END/i', $field, $matches)) {
+            return trim($matches[0]);
+        }
+        return null;
+    }
+
     /**
-     * Parse GROUP BY clause into individual fields
+     * Parse GROUP BY clause
      */
     public function parseGroupBy(string $groupByClause): array
     {
-        return array_map('trim', explode(',', $groupByClause));
+        return array_map('trim', $this->splitRespectingDelimiters($groupByClause, ','));
     }
 
     /**
@@ -140,7 +225,7 @@ class CommonSqlParser
     }
 
     /**
-     * Normalize SQL by cleaning up whitespace and common issues
+     * Normalize SQL
      */
     public function normalizeSql(string $sql): string
     {
@@ -150,14 +235,131 @@ class CommonSqlParser
     }
 
     /**
-     * Parse WHERE clause and extract it from different query types
+     * Split comma-separated values respecting quotes and parentheses
+     */
+    public function splitRespectingDelimiters(string $input, string $delimiter = ','): array
+    {
+        $result = [];
+        $current = '';
+        $inQuotes = false;
+        $quoteChar = '';
+        $depth = 0;
+
+        for ($i = 0; $i < strlen($input); $i++) {
+            $char = $input[$i];
+
+            if (($char === '"' || $char === "'" || $char === '`') && !$inQuotes) {
+                $inQuotes = true;
+                $quoteChar = $char;
+                $current .= $char;
+            } elseif ($char === $quoteChar && $inQuotes) {
+                $inQuotes = false;
+                $quoteChar = '';
+                $current .= $char;
+            } elseif (!$inQuotes) {
+                if ($char === '(') {
+                    $depth++;
+                    $current .= $char;
+                } elseif ($char === ')') {
+                    $depth--;
+                    $current .= $char;
+                } elseif ($char === $delimiter && $depth === 0) {
+                    $result[] = trim($current);
+                    $current = '';
+                } else {
+                    $current .= $char;
+                }
+            } else {
+                $current .= $char;
+            }
+        }
+
+        if (trim($current) !== '') {
+            $result[] = trim($current);
+        }
+
+        return $result;
+    }
+
+    /**
+     * Find the position of a character at the top level
+     */
+    public function findTopLevelPosition(string $str, string $searchChar)
+    {
+        $depth = 0;
+        $inQuotes = false;
+        $quoteChar = '';
+
+        for ($i = 0; $i < strlen($str); $i++) {
+            $char = $str[$i];
+
+            if (($char === '"' || $char === "'" || $char === '`') && !$inQuotes) {
+                $inQuotes = true;
+                $quoteChar = $char;
+            } elseif ($char === $quoteChar && $inQuotes) {
+                $inQuotes = false;
+                $quoteChar = '';
+            } elseif (!$inQuotes) {
+                if ($char === '(') {
+                    $depth++;
+                } elseif ($char === ')') {
+                    $depth--;
+                } elseif ($char === $searchChar && $depth === 0) {
+                    return $i;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Check if a string is wrapped in parentheses
+     */
+    public function isWrappedInParentheses(string $str): bool
+    {
+        $str = trim($str);
+        if (strlen($str) < 2 || $str[0] !== '(' || $str[strlen($str) - 1] !== ')') {
+            return false;
+        }
+
+        $depth = 0;
+        $inQuotes = false;
+        $quoteChar = '';
+
+        for ($i = 0; $i < strlen($str); $i++) {
+            $char = $str[$i];
+
+            if (($char === '"' || $char === "'") && !$inQuotes) {
+                $inQuotes = true;
+                $quoteChar = $char;
+            } elseif ($char === $quoteChar && $inQuotes) {
+                $inQuotes = false;
+                $quoteChar = '';
+            } elseif (!$inQuotes) {
+                if ($char === '(') {
+                    $depth++;
+                } elseif ($char === ')') {
+                    $depth--;
+                    if ($depth === 0 && $i < strlen($str) - 1) {
+                        return false;
+                    }
+                }
+            }
+        }
+
+        return $depth === 0;
+    }
+
+    /**
+     * Parse WHERE clause
      */
     public function parseWhere(string $sql): ?string
     {
         $patterns = [
-            '/WHERE\s+(.+?)(?:\s+GROUP\s+BY|\s+HAVING|\s+ORDER\s+BY|\s+LIMIT|\s+OFFSET|$)/i',
-            '/WHERE\s+(.+?)(?:\s+ORDER\s+BY|\s+LIMIT|$)/i',
-            '/WHERE\s+(.+?)$/i'
+            '/\bWHERE\s+(.+?)(?:\s+GROUP\s+BY|\s+HAVING|\s+ORDER\s+BY|\s+LIMIT|\s+OFFSET|$)/i',
+            '/\bWHERE\s+(.+?)(?:\s+ORDER\s+BY|\s+LIMIT|$)/i',
+            '/\bWHERE\s+(.+?)$/i'
         ];
 
         foreach ($patterns as $pattern) {
@@ -170,7 +372,7 @@ class CommonSqlParser
     }
 
     /**
-     * Split WHERE clause conditions into individual conditions with their operators
+     * Split WHERE clause conditions
      */
     public function splitWhereConditions(string $whereClause): array
     {
@@ -178,6 +380,10 @@ class CommonSqlParser
         $whereClause = $this->convertPositionalToNamedParams($whereClause);
 
         if ($this->isWrappedInParentheses($whereClause)) {
+            return [['condition' => $whereClause, 'operator' => null]];
+        }
+
+        if (!$this->hasTopLevelLogicalOperators($whereClause)) {
             return [['condition' => $whereClause, 'operator' => null]];
         }
 
@@ -239,8 +445,8 @@ class CommonSqlParser
 
                     $nextCondition = $this->extractNextWhereCondition(substr($whereClause, $i));
                     if ($nextCondition) {
-                        $conditions[] = ['condition' => trim($nextCondition['condition']), 'operator' => 'AND'];
-                        $i += strlen($nextCondition['condition']);
+                        $conditions[] = ['condition' => trim((string) $nextCondition['condition']), 'operator' => 'AND'];
+                        $i += strlen((string) $nextCondition['condition']);
                         $current = '';
                         continue;
                     }
@@ -253,8 +459,8 @@ class CommonSqlParser
 
                     $nextCondition = $this->extractNextWhereCondition(substr($whereClause, $i));
                     if ($nextCondition) {
-                        $conditions[] = ['condition' => trim($nextCondition['condition']), 'operator' => 'OR'];
-                        $i += strlen($nextCondition['condition']);
+                        $conditions[] = ['condition' => trim((string) $nextCondition['condition']), 'operator' => 'OR'];
+                        $i += strlen((string) $nextCondition['condition']);
                         $current = '';
                         continue;
                     }
@@ -276,9 +482,38 @@ class CommonSqlParser
         return $conditions;
     }
 
-    /**
-     * Extract the next condition from a WHERE clause fragment
-     */
+    private function hasTopLevelLogicalOperators(string $whereClause): bool
+    {
+        $depth = 0;
+        $inQuotes = false;
+        $quoteChar = '';
+
+        for ($i = 0; $i < strlen($whereClause); $i++) {
+            $char = $whereClause[$i];
+
+            if (($char === '"' || $char === "'") && !$inQuotes) {
+                $inQuotes = true;
+                $quoteChar = $char;
+            } elseif ($char === $quoteChar && $inQuotes) {
+                $inQuotes = false;
+                $quoteChar = '';
+            } elseif (!$inQuotes) {
+                if ($char === '(') {
+                    $depth++;
+                } elseif ($char === ')') {
+                    $depth--;
+                } elseif ($depth === 0) {
+                    $remaining = substr($whereClause, $i);
+                    if (preg_match('/^\s*(AND|OR)\s+/i', $remaining)) {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        return false;
+    }
+
     private function extractNextWhereCondition(string $remaining): ?array
     {
         $condition = '';
@@ -330,133 +565,5 @@ class CommonSqlParser
         }
 
         return trim($condition) !== '' ? ['condition' => $condition] : null;
-    }
-
-    /**
-     * Split comma-separated values respecting quotes and parentheses
-     */
-    public function splitRespectingDelimiters(string $input, string $delimiter = ','): array
-    {
-        $result = [];
-        $current = '';
-        $inQuotes = false;
-        $quoteChar = '';
-        $depth = 0;
-
-        for ($i = 0; $i < strlen($input); $i++) {
-            $char = $input[$i];
-
-            if (($char === '"' || $char === "'" || $char === '`') && !$inQuotes) {
-                $inQuotes = true;
-                $quoteChar = $char;
-                $current .= $char;
-            } elseif ($char === $quoteChar && $inQuotes) {
-                $inQuotes = false;
-                $quoteChar = '';
-                $current .= $char;
-            } elseif (!$inQuotes) {
-                if ($char === '(') {
-                    $depth++;
-                    $current .= $char;
-                } elseif ($char === ')') {
-                    $depth--;
-                    $current .= $char;
-                } elseif ($char === $delimiter && $depth === 0) {
-                    $result[] = trim($current);
-                    $current = '';
-                } else {
-                    $current .= $char;
-                }
-            } else {
-                $current .= $char;
-            }
-        }
-
-        if (trim($current) !== '') {
-            $result[] = trim($current);
-        }
-
-        return $result;
-    }
-
-    /**
-     * Find the position of a character at the top level
-     */
-    public function findTopLevelPosition(string $str, string $searchChar): int|false
-    {
-        $depth = 0;
-        $inQuotes = false;
-        $quoteChar = '';
-
-        for ($i = 0; $i < strlen($str); $i++) {
-            $char = $str[$i];
-
-            if (($char === '"' || $char === "'" || $char === '`') && !$inQuotes) {
-                $inQuotes = true;
-                $quoteChar = $char;
-            } elseif ($char === $quoteChar && $inQuotes) {
-                $inQuotes = false;
-                $quoteChar = '';
-            } elseif (!$inQuotes) {
-                if ($char === '(') {
-                    $depth++;
-                } elseif ($char === ')') {
-                    $depth--;
-                } elseif ($char === $searchChar && $depth === 0) {
-                    return $i;
-                }
-            }
-        }
-
-        return false;
-    }
-
-    /**
-     * Check if a string is wrapped in parentheses at the top level
-     */
-    public function isWrappedInParentheses(string $str): bool
-    {
-        $str = trim($str);
-        if (strlen($str) < 2 || $str[0] !== '(' || $str[strlen($str) - 1] !== ')') {
-            return false;
-        }
-
-        $depth = 0;
-        $inQuotes = false;
-        $quoteChar = '';
-
-        for ($i = 0; $i < strlen($str); $i++) {
-            $char = $str[$i];
-
-            if (($char === '"' || $char === "'") && !$inQuotes) {
-                $inQuotes = true;
-                $quoteChar = $char;
-            } elseif ($char === $quoteChar && $inQuotes) {
-                $inQuotes = false;
-                $quoteChar = '';
-            } elseif (!$inQuotes) {
-                if ($char === '(') {
-                    $depth++;
-                } elseif ($char === ')') {
-                    $depth--;
-                    if ($depth === 0 && $i < strlen($str) - 1) {
-                        return false;
-                    }
-                }
-            }
-        }
-
-        return $depth === 0;
-    }
-
-    /**
-     * Extract CASE...END expression from ORDER BY field
-     */
-    private function extractCaseExpression(string $field): ?string
-    {
-        if (preg_match('/CASE\s+.*?\s+END/i', $field, $matches)) {
-            return trim($matches[0]);
-        }
-        return null;
     }
 }
