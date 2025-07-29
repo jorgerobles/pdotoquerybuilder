@@ -34,7 +34,7 @@ class DeleteQueryBuilder
         $sql = $this->commonParser->normalizeSql($sql);
         $parts = $this->parseDeleteQuery($sql);
 
-        // DELETE FROM table
+        // DELETE FROM table with optional alias
         if (!empty($parts['table'])) {
             // For DELETE queries, if there's an alias and JOINs, pass alias to delete() method
             if ($parts['table']['hasExplicitAlias'] && !empty($parts['joins'])) {
@@ -50,7 +50,7 @@ class DeleteQueryBuilder
 
         // Handle multi-table deletes with JOINs
         if (!empty($parts['joins'])) {
-            $mainTableAlias = $parts['table']['alias'] ?? 'main';
+            $mainTableAlias = $parts['table']['alias'] ?? $parts['table']['table'] ?? 'main';
             foreach ($parts['joins'] as $join) {
                 $queryBuilder = $this->factory->addJoin($queryBuilder, $join, $mainTableAlias);
             }

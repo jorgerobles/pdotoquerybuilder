@@ -57,8 +57,6 @@ class QueryBuilderFactory
                 $method = 'innerJoin';
                 break;
             case strpos($joinType, 'CROSS') !== false:
-                $method = 'join';
-                break;
             default:
                 $method = 'join';
                 break;

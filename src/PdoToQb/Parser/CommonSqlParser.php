@@ -20,18 +20,19 @@ class CommonSqlParser
         // Pattern: table_name [AS] alias
         if (preg_match('/^(\w+)(?:\s+(?:AS\s+)?(\w+))?$/i', $tableFragment, $matches)) {
             $tableName = $matches[1];
-            $alias = $matches[2] ?? $tableName;
+            $hasExplicitAlias = isset($matches[2]);
+            $alias = $hasExplicitAlias ? $matches[2] : null;
 
             return [
                 'table' => $tableName,
                 'alias' => $alias,
-                'hasExplicitAlias' => isset($matches[2])
+                'hasExplicitAlias' => $hasExplicitAlias
             ];
         }
 
         return [
             'table' => $tableFragment,
-            'alias' => $tableFragment,
+            'alias' => null,
             'hasExplicitAlias' => false
         ];
     }

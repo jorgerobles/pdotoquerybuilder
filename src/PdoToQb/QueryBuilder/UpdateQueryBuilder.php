@@ -32,7 +32,7 @@ class UpdateQueryBuilder
         $sql = $this->commonParser->normalizeSql($sql);
         $parts = $this->parseUpdateQuery($sql);
 
-        // UPDATE table
+        // UPDATE table with optional alias
         if (!empty($parts['table'])) {
             // For UPDATE queries, if there's an alias and JOINs, pass alias to update() method
             if ($parts['table']['hasExplicitAlias'] && !empty($parts['joins'])) {
@@ -54,7 +54,7 @@ class UpdateQueryBuilder
 
         // JOINs (for multi-table updates)
         if (!empty($parts['joins'])) {
-            $mainTableAlias = $parts['table']['alias'] ?? 'main';
+            $mainTableAlias = $parts['table']['alias'] ?? $parts['table']['table'] ?? 'main';
             foreach ($parts['joins'] as $join) {
                 $queryBuilder = $this->factory->addJoin($queryBuilder, $join, $mainTableAlias);
             }

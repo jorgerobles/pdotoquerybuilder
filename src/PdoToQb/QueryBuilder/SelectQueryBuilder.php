@@ -38,17 +38,21 @@ class SelectQueryBuilder
         $selectClause = $parts['select'] ?? '*';
         $queryBuilder = $this->factory->createMethodCall($queryBuilder, 'select', [$selectClause]);
 
-        // FROM clause with alias
+        // FROM clause with optional alias
         if (!empty($parts['from'])) {
-            $queryBuilder = $this->factory->createMethodCall($queryBuilder, 'from', [
-                $parts['from']['table'],
-                $parts['from']['alias']
-            ]);
+            $fromArgs = [$parts['from']['table']];
+
+            // Only add alias if it exists and is different from table name
+            if ($parts['from']['alias'] !== null) {
+                $fromArgs[] = $parts['from']['alias'];
+            }
+
+            $queryBuilder = $this->factory->createMethodCall($queryBuilder, 'from', $fromArgs);
         }
 
         // JOINs
         if (!empty($parts['joins'])) {
-            $mainTableAlias = $parts['from']['alias'] ?? 'main';
+            $mainTableAlias = $parts['from']['alias'] ?? $parts['from']['table'] ?? 'main';
             foreach ($parts['joins'] as $join) {
                 $queryBuilder = $this->factory->addJoin($queryBuilder, $join, $mainTableAlias);
             }
@@ -90,7 +94,7 @@ class SelectQueryBuilder
             $parts['select'] = trim($matches[1]);
         }
 
-        // FROM clause with alias
+        // FROM clause with optional alias
         if (preg_match('/FROM\s+(\w+)(?:\s+(?:AS\s+)?(\w+))?/i', $sql, $matches)) {
             $tableInfo = $this->commonParser->parseTableWithAlias($matches[1] . (isset($matches[2]) ? ' ' . $matches[2] : ''));
             $parts['from'] = $tableInfo;
