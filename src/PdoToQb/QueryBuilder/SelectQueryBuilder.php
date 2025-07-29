@@ -8,7 +8,7 @@ use PhpParser\Node\Expr\MethodCall;
 use JDR\Rector\PdoToQb\Parser\CommonSqlParser;
 
 /**
- * Refactored SELECT query builder using common utilities
+ * Improved SELECT query builder with better FROM clause parsing
  */
 class SelectQueryBuilder
 {
@@ -38,11 +38,11 @@ class SelectQueryBuilder
         $selectClause = $parts['select'] ?? '*';
         $queryBuilder = $this->factory->createMethodCall($queryBuilder, 'select', [$selectClause]);
 
-        // FROM clause with optional alias
+        // FROM clause with optional alias - using improved parsing
         if (!empty($parts['from'])) {
             $fromArgs = [$parts['from']['table']];
 
-            // Only add alias if it exists and is different from table name
+            // Only add alias if it exists
             if ($parts['from']['alias'] !== null) {
                 $fromArgs[] = $parts['from']['alias'];
             }
@@ -94,16 +94,16 @@ class SelectQueryBuilder
             $parts['select'] = trim($matches[1]);
         }
 
-        // FROM clause with optional alias
-        if (preg_match('/FROM\s+(\w+)(?:\s+(?:AS\s+)?(\w+))?/i', $sql, $matches)) {
-            $tableInfo = $this->commonParser->parseTableWithAlias($matches[1] . (isset($matches[2]) ? ' ' . $matches[2] : ''));
-            $parts['from'] = $tableInfo;
+        // FROM clause - using improved parser that handles WHERE clauses properly
+        $fromInfo = $this->commonParser->parseFromClause($sql);
+        if ($fromInfo !== null) {
+            $parts['from'] = $fromInfo;
         }
 
         // JOINs
         $parts['joins'] = $this->commonParser->parseJoins($sql);
 
-        // WHERE clause - now parsed by CommonSqlParser
+        // WHERE clause - now parsed by CommonSqlParser with better handling
         $parts['where'] = $this->commonParser->parseWhere($sql);
 
         // GROUP BY clause

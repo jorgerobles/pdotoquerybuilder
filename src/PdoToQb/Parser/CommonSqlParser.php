@@ -5,19 +5,19 @@ declare(strict_types=1);
 namespace JDR\Rector\PdoToQb\Parser;
 
 /**
- * Common SQL parsing utilities shared across different query builders
+ * Fixed Common SQL parsing utilities - handles named parameters correctly
  */
 class CommonSqlParser
 {
     /**
      * Parse table name and alias from SQL fragment
-     * Handles patterns like: "table", "table alias", "table AS alias"
+     * Now properly handles named parameters and complex WHERE clauses
      */
     public function parseTableWithAlias(string $tableFragment): array
     {
         $tableFragment = trim($tableFragment);
 
-        // Pattern: table_name [AS] alias
+        // Pattern: table_name [AS] alias (improved to avoid matching WHERE/parameter content)
         if (preg_match('/^(\w+)(?:\s+(?:AS\s+)?(\w+))?$/i', $tableFragment, $matches)) {
             $tableName = $matches[1];
             $hasExplicitAlias = isset($matches[2]);
@@ -38,6 +38,29 @@ class CommonSqlParser
     }
 
     /**
+     * Enhanced FROM clause parsing that properly handles WHERE clauses with named parameters
+     */
+    public function parseFromClause(string $sql): ?array
+    {
+        // More precise FROM parsing that stops at WHERE, JOIN, GROUP BY, etc.
+        $pattern = '/FROM\s+(\w+)(?:\s+(?:AS\s+)?(\w+))?(?=\s+(?:WHERE|INNER\s+JOIN|LEFT\s+JOIN|RIGHT\s+JOIN|JOIN|GROUP\s+BY|HAVING|ORDER\s+BY|LIMIT|$))/i';
+
+        if (preg_match($pattern, $sql, $matches)) {
+            $tableName = $matches[1];
+            $hasExplicitAlias = isset($matches[2]) && (isset($matches[2]) && ($matches[2] !== '' && $matches[2] !== '0'));
+            $alias = $hasExplicitAlias ? $matches[2] : null;
+
+            return [
+                'table' => $tableName,
+                'alias' => $alias,
+                'hasExplicitAlias' => $hasExplicitAlias
+            ];
+        }
+
+        return null;
+    }
+
+    /**
      * Parse JOIN clauses from SQL
      * Returns array of join information
      */
@@ -45,19 +68,21 @@ class CommonSqlParser
     {
         $joins = [];
 
-        // Pattern for JOINs - works for SELECT, UPDATE, DELETE
+        // Enhanced JOIN pattern that properly handles complex conditions
         $joinPattern = '/\b((?:LEFT|RIGHT|INNER|OUTER|CROSS)?\s*JOIN)\s+(\w+)(?:\s+(?:AS\s+)?(\w+))?\s+ON\s+([^)]+?)(?=\s+(?:LEFT|RIGHT|INNER|OUTER|CROSS)?\s*JOIN|\s+WHERE|\s+SET|\s+GROUP\s+BY|\s+HAVING|\s+ORDER\s+BY|\s+LIMIT|\s+OFFSET|$)/i';
 
         if (preg_match_all($joinPattern, $sql, $matches, PREG_SET_ORDER)) {
             foreach ($matches as $match) {
-                $tableInfo = $this->parseTableWithAlias($match[2] . (isset($match[3]) ? ' ' . $match[3] : ''));
+                $tableName = $match[2];
+                $hasExplicitAlias = isset($match[3]) && (isset($match[3]) && ($match[3] !== '' && $match[3] !== '0'));
+                $alias = $hasExplicitAlias ? $match[3] : null;
 
                 $joins[] = [
                     'type' => trim($match[1]),
-                    'table' => $tableInfo['table'],
-                    'alias' => $tableInfo['alias'],
+                    'table' => $tableName,
+                    'alias' => $alias,
                     'condition' => trim($match[4]),
-                    'hasExplicitAlias' => $tableInfo['hasExplicitAlias']
+                    'hasExplicitAlias' => $hasExplicitAlias
                 ];
             }
         }
@@ -69,6 +94,7 @@ class CommonSqlParser
 
     /**
      * Convert positional parameters (?) to named parameters (:param1, :param2, etc.)
+     * Does NOT convert existing named parameters
      */
     public function convertPositionalToNamedParams(string $sql): string
     {
@@ -92,7 +118,7 @@ class CommonSqlParser
     public function parseOrderBy(string $orderByClause): array
     {
         $orderByFields = [];
-        $fields = array_map('trim', explode(',', $orderByClause));
+        $fields = $this->splitRespectingDelimiters($orderByClause, ',');
 
         foreach ($fields as $field) {
             $parts = preg_split('/\s+/', trim($field));
@@ -132,7 +158,7 @@ class CommonSqlParser
      */
     public function parseGroupBy(string $groupByClause): array
     {
-        return array_map('trim', explode(',', $groupByClause));
+        return array_map('trim', $this->splitRespectingDelimiters($groupByClause, ','));
     }
 
     /**
@@ -294,21 +320,21 @@ class CommonSqlParser
     }
 
     /**
-     * Parse WHERE clause and extract it from different query types
+     * FIXED: Parse WHERE clause properly handling named parameters
      * Returns WHERE clause content without the WHERE keyword
      */
     public function parseWhere(string $sql): ?string
     {
-        // Pattern to match WHERE clause, accounting for different query endings
+        // Enhanced patterns that properly handle named parameters like :id, :name, etc.
         $patterns = [
             // For SELECT: WHERE ... [GROUP BY|HAVING|ORDER BY|LIMIT|OFFSET|end]
-            '/WHERE\s+(.+?)(?:\s+GROUP\s+BY|\s+HAVING|\s+ORDER\s+BY|\s+LIMIT|\s+OFFSET|$)/i',
+            '/\bWHERE\s+(.+?)(?:\s+GROUP\s+BY|\s+HAVING|\s+ORDER\s+BY|\s+LIMIT|\s+OFFSET|$)/i',
             // For UPDATE: WHERE ... [ORDER BY|LIMIT|end]
-            '/WHERE\s+(.+?)(?:\s+ORDER\s+BY|\s+LIMIT|$)/i',
+            '/\bWHERE\s+(.+?)(?:\s+ORDER\s+BY|\s+LIMIT|$)/i',
             // For DELETE: WHERE ... [ORDER BY|LIMIT|end]
-            '/WHERE\s+(.+?)(?:\s+ORDER\s+BY|\s+LIMIT|$)/i',
+            '/\bWHERE\s+(.+?)(?:\s+ORDER\s+BY|\s+LIMIT|$)/i',
             // Generic fallback: WHERE ... [end]
-            '/WHERE\s+(.+?)$/i'
+            '/\bWHERE\s+(.+?)$/i'
         ];
 
         foreach ($patterns as $pattern) {
@@ -321,17 +347,22 @@ class CommonSqlParser
     }
 
     /**
-     * Split WHERE clause conditions into individual conditions with their operators
+     * FIXED: Split WHERE clause conditions preserving named parameters
      * Handles complex nested parentheses and preserves logical structure
      */
     public function splitWhereConditions(string $whereClause): array
     {
-        // Normalize and convert parameters first
+        // Normalize but DON'T convert named parameters (only positional ones)
         $whereClause = $this->normalizeSql($whereClause);
         $whereClause = $this->convertPositionalToNamedParams($whereClause);
 
         // If the entire WHERE clause is wrapped in parentheses, treat it as one condition
         if ($this->isWrappedInParentheses($whereClause)) {
+            return [['condition' => $whereClause, 'operator' => null]];
+        }
+
+        // For simple conditions without top-level AND/OR, return as single condition
+        if (!$this->hasTopLevelLogicalOperators($whereClause)) {
             return [['condition' => $whereClause, 'operator' => null]];
         }
 
@@ -439,6 +470,41 @@ class CommonSqlParser
         }
 
         return $conditions;
+    }
+
+    /**
+     * Check if WHERE clause has top-level AND/OR operators (not inside parentheses)
+     */
+    private function hasTopLevelLogicalOperators(string $whereClause): bool
+    {
+        $depth = 0;
+        $inQuotes = false;
+        $quoteChar = '';
+
+        for ($i = 0; $i < strlen($whereClause); $i++) {
+            $char = $whereClause[$i];
+
+            if (($char === '"' || $char === "'") && !$inQuotes) {
+                $inQuotes = true;
+                $quoteChar = $char;
+            } elseif ($char === $quoteChar && $inQuotes) {
+                $inQuotes = false;
+                $quoteChar = '';
+            } elseif (!$inQuotes) {
+                if ($char === '(') {
+                    $depth++;
+                } elseif ($char === ')') {
+                    $depth--;
+                } elseif ($depth === 0) {
+                    $remaining = substr($whereClause, $i);
+                    if (preg_match('/^\s*(AND|OR)\s+/i', $remaining)) {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        return false;
     }
 
     /**
