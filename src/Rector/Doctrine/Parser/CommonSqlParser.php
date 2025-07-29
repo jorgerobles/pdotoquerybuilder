@@ -71,7 +71,7 @@ class CommonSqlParser
      */
     public function convertPositionalToNamedParams(string $sql): string
     {
-        return preg_replace_callback('/\?/', function($matches) {
+        return preg_replace_callback('/\?/', function($matches): string {
             self::$globalParamCount++;
             return ":param" . self::$globalParamCount;
         }, $sql);
@@ -166,9 +166,8 @@ class CommonSqlParser
 
         // Fix common SQL issues
         $sql = str_replace(' AND NULL', '', $sql);
-        $sql = str_replace('IS AND', 'IS NOT', $sql);
 
-        return $sql;
+        return str_replace('IS AND', 'IS NOT', $sql);
     }
 
     /**
@@ -398,8 +397,8 @@ class CommonSqlParser
                     // Extract next condition
                     $nextCondition = $this->extractNextWhereCondition(substr($whereClause, $i));
                     if ($nextCondition) {
-                        $conditions[] = ['condition' => trim($nextCondition['condition']), 'operator' => 'AND'];
-                        $i += strlen($nextCondition['condition']);
+                        $conditions[] = ['condition' => trim((string) $nextCondition['condition']), 'operator' => 'AND'];
+                        $i += strlen((string) $nextCondition['condition']);
                         $current = '';
                         continue;
                     }
@@ -415,8 +414,8 @@ class CommonSqlParser
                     // Extract next condition
                     $nextCondition = $this->extractNextWhereCondition(substr($whereClause, $i));
                     if ($nextCondition) {
-                        $conditions[] = ['condition' => trim($nextCondition['condition']), 'operator' => 'OR'];
-                        $i += strlen($nextCondition['condition']);
+                        $conditions[] = ['condition' => trim((string) $nextCondition['condition']), 'operator' => 'OR'];
+                        $i += strlen((string) $nextCondition['condition']);
                         $current = '';
                         continue;
                     }

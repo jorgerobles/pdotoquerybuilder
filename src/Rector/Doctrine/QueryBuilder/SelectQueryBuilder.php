@@ -10,7 +10,7 @@ use App\Rector\Doctrine\Parser\CommonSqlParser;
 /**
  * Refactored SELECT query builder using common utilities
  */
-class SelectQueryBuilder
+readonly class SelectQueryBuilder
 {
     private CommonSqlParser $commonParser;
     private QueryBuilderFactory $factory;

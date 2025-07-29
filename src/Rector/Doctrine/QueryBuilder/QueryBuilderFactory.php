@@ -41,7 +41,7 @@ class QueryBuilderFactory
      */
     public function addJoin(MethodCall $queryBuilder, array $join, string $mainTableAlias = 'main'): MethodCall
     {
-        $joinType = strtoupper(trim($join['type']));
+        $joinType = strtoupper(trim((string) $join['type']));
         $table = $join['table'];
         $alias = $join['alias'];
         $condition = $join['condition'];
@@ -94,7 +94,7 @@ class QueryBuilderFactory
     public function addLimit(MethodCall $queryBuilder, ?int $limit): MethodCall
     {
         if ($limit !== null) {
-            $queryBuilder = $this->createMethodCall($queryBuilder, 'setMaxResults', [$limit]);
+            return $this->createMethodCall($queryBuilder, 'setMaxResults', [$limit]);
         }
         return $queryBuilder;
     }
@@ -105,7 +105,7 @@ class QueryBuilderFactory
     public function addOffset(MethodCall $queryBuilder, ?int $offset): MethodCall
     {
         if ($offset !== null) {
-            $queryBuilder = $this->createMethodCall($queryBuilder, 'setFirstResult', [$offset]);
+            return $this->createMethodCall($queryBuilder, 'setFirstResult', [$offset]);
         }
         return $queryBuilder;
     }

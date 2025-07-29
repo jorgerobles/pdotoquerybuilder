@@ -6,12 +6,11 @@ namespace App\Rector\Doctrine\QueryBuilder;
 
 use PhpParser\Node\Expr\MethodCall;
 use App\Rector\Doctrine\Parser\CommonSqlParser;
-use App\Rector\Doctrine\Parser\WhereClauseParser;
 
 /**
  * Refactored DELETE query builder using common utilities
  */
-class DeleteQueryBuilder
+readonly class DeleteQueryBuilder
 {
     private CommonSqlParser $commonParser;
     private QueryBuilderFactory $factory;
@@ -89,7 +88,7 @@ class DeleteQueryBuilder
             $parts['table'] = $tableInfo;
 
             // Ensure we recognize this has an alias for JOIN purposes
-            if (isset($matches[3]) || in_array($matches[1], [$matches[2]])) {
+            if (isset($matches[3]) || $matches[1] === $matches[2]) {
                 $parts['table']['hasExplicitAlias'] = true;
                 $parts['table']['alias'] = $matches[3] ?? $matches[1];
             }

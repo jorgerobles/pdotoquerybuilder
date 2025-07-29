@@ -11,7 +11,7 @@ use App\Rector\Doctrine\Parser\SetClauseParser;
 /**
  * Refactored INSERT query builder using common utilities
  */
-class InsertQueryBuilder
+readonly class InsertQueryBuilder
 {
     private CommonSqlParser $commonParser;
     private SetClauseParser $setParser;

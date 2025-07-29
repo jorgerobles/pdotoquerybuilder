@@ -7,7 +7,7 @@ namespace App\Rector\Doctrine\Parser;
 /**
  * Parser for SET clauses used in UPDATE and INSERT queries
  */
-class SetClauseParser
+readonly class SetClauseParser
 {
     private CommonSqlParser $commonParser;
 
@@ -66,7 +66,7 @@ class SetClauseParser
     private function cleanColumnName(string $column): string
     {
         // Remove table prefix if present
-        if (strpos($column, '.') !== false) {
+        if (str_contains($column, '.')) {
             $columnParts = explode('.', $column);
             $column = end($columnParts);
         }
@@ -129,8 +129,6 @@ class SetClauseParser
         $values = $this->commonParser->splitRespectingDelimiters($valueList, ',');
 
         // Normalize values
-        return array_map(function($value) {
-            return $this->normalizeValue($value);
-        }, $values);
+        return array_map(fn($value): string => $this->normalizeValue($value), $values);
     }
 }

@@ -27,25 +27,18 @@ use App\Rector\Doctrine\Parser\CommonSqlParser;
  */
 final class PdoToQueryBuilderRector extends AbstractRector implements ConfigurableRectorInterface
 {
-    private SqlExtractor $sqlExtractor;
-    private CommonSqlParser $commonParser;
-    private QueryBuilderFactory $factory;
-    private SelectQueryBuilder $selectBuilder;
-    private InsertQueryBuilder $insertBuilder;
-    private UpdateQueryBuilder $updateBuilder;
-    private DeleteQueryBuilder $deleteBuilder;
-
-    // Configuration properties
-    private array $pdoVariableNames;
-    private string $connectionProperty;
+    private readonly SqlExtractor $sqlExtractor;
+    private readonly CommonSqlParser $commonParser;
+    private readonly QueryBuilderFactory $factory;
+    private readonly SelectQueryBuilder $selectBuilder;
+    private readonly InsertQueryBuilder $insertBuilder;
+    private readonly UpdateQueryBuilder $updateBuilder;
+    private readonly DeleteQueryBuilder $deleteBuilder;
 
     public function __construct(
-        array $pdoVariableNames = ['pdo', 'db', 'connection'],
-        string $connectionProperty = 'connection'
+        private array $pdoVariableNames = ['pdo', 'db', 'connection'],
+        private string $connectionProperty = 'connection'
     ) {
-        $this->pdoVariableNames = $pdoVariableNames;
-        $this->connectionProperty = $connectionProperty;
-
         $this->sqlExtractor = new SqlExtractor();
         $this->commonParser = new CommonSqlParser();
         $this->factory = new QueryBuilderFactory();
