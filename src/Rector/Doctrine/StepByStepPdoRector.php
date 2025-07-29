@@ -4,30 +4,33 @@ declare(strict_types=1);
 
 namespace App\Rector\Doctrine;
 
-use PhpMyAdmin\SqlParser\Components\Expression as SqlExpression;
-use PhpMyAdmin\SqlParser\Components\GroupKeyword;
-use PhpMyAdmin\SqlParser\Components\Limit;
-use PhpMyAdmin\SqlParser\Components\OrderKeyword;
-use PhpMyAdmin\SqlParser\Parser;
-use PhpMyAdmin\SqlParser\Statements\DeleteStatement;
-use PhpMyAdmin\SqlParser\Statements\InsertStatement;
-use PhpMyAdmin\SqlParser\Statements\SelectStatement;
-use PhpMyAdmin\SqlParser\Statements\UpdateStatement;
 use PhpParser\Node;
-use PhpParser\Node\Arg;
-use PhpParser\Node\Expr\Array_;
-use PhpParser\Node\Expr\ArrayItem;
-use PhpParser\Node\Expr\Assign;
 use PhpParser\Node\Expr\MethodCall;
 use PhpParser\Node\Expr\Variable;
+use PhpParser\Node\Expr\Assign;
+use PhpParser\Node\Expr\Array_;
+use PhpParser\Node\Expr\ArrayItem;
 use PhpParser\Node\Identifier;
-use PhpParser\Node\Scalar\LNumber;
+use PhpParser\Node\Arg;
 use PhpParser\Node\Scalar\String_;
-use PhpParser\Node\Stmt\Expression;
+use PhpParser\Node\Scalar\LNumber;
 use PhpParser\Node\Stmt\Return_;
+use PhpParser\Node\Stmt\Expression;
+
 use Rector\Rector\AbstractRector;
 use Symplify\RuleDocGenerator\ValueObject\CodeSample\CodeSample;
 use Symplify\RuleDocGenerator\ValueObject\RuleDefinition;
+
+use PhpMyAdmin\SqlParser\Parser;
+use PhpMyAdmin\SqlParser\Components\Expression as SqlExpression;
+use PhpMyAdmin\SqlParser\Components\Condition;
+use PhpMyAdmin\SqlParser\Components\Limit;
+use PhpMyAdmin\SqlParser\Components\OrderKeyword;
+use PhpMyAdmin\SqlParser\Components\GroupKeyword;
+use PhpMyAdmin\SqlParser\Statements\SelectStatement;
+use PhpMyAdmin\SqlParser\Statements\InsertStatement;
+use PhpMyAdmin\SqlParser\Statements\UpdateStatement;
+use PhpMyAdmin\SqlParser\Statements\DeleteStatement;
 
 final class StepByStepPdoRector extends AbstractRector
 {
@@ -42,22 +45,22 @@ final class StepByStepPdoRector extends AbstractRector
             [
                 new CodeSample(
                     <<<'CODE_SAMPLE'
-                    $stmt = $pdo->prepare("SELECT u.name, u.email FROM users u WHERE u.age > ? AND u.status = ? ORDER BY u.name LIMIT 10");
-                    $stmt->execute([25, 'active']);
-                    return $stmt->fetchAll();
+                    public function getUsers() {
+                        $stmt = $pdo->prepare("SELECT id, name FROM users WHERE status = ?");
+                        $stmt->execute(['active']);
+                        return $stmt->fetchAll();
+                    }
                     CODE_SAMPLE,
                     <<<'CODE_SAMPLE'
-                    return $this->connection()->createQueryBuilder()
-                        ->select('u.name, u.email')
-                        ->from('users', 'u')
-                        ->where('u.age > :param1')
-                        ->andWhere('u.status = :param2')
-                        ->orderBy('u.name', 'ASC')
-                        ->setMaxResults(10)
-                        ->setParameter('param1', 25)
-                        ->setParameter('param2', 'active')
-                        ->executeQuery()
-                        ->fetchAllAssociative();
+                    public function getUsers() {
+                        return $this->connection()->createQueryBuilder()
+                            ->select('id, name')
+                            ->from('users', 'users')
+                            ->where('status = :param1')
+                            ->setParameter('param1', 'active')
+                            ->executeQuery()
+                            ->fetchAllAssociative();
+                    }
                     CODE_SAMPLE
                 ),
             ]
@@ -199,7 +202,10 @@ final class StepByStepPdoRector extends AbstractRector
             case 'fetchColumn':
                 return 'fetchOne';
             case 'fetchObject':
-                return 'fetchAssociative'; // Closest equivalent
+                return 'fetchAssociative';
+            case 'rowCount':
+            case 'lastInsertId':
+                return 'none';
             default:
                 return 'fetchAllAssociative';
         }
@@ -545,7 +551,7 @@ final class StepByStepPdoRector extends AbstractRector
         if ($statement->columns && $statement->values) {
             $columns = $statement->columns;
 
-            foreach ($columns as $index => $column) {
+            foreach ($columns as $column) {
                 $columnName = (string)$column;
                 $value = $this->convertParameterPlaceholders('?'); // Use placeholder, will be replaced with named parameter
 
@@ -651,11 +657,15 @@ final class StepByStepPdoRector extends AbstractRector
             new Identifier('executeQuery')
         );
 
-        // Then add the fetch method
-        return new MethodCall(
-            $queryBuilder,
-            new Identifier($fetchMethod)
-        );
+        // Then add the fetch method if needed
+        if ($fetchMethod !== 'none') {
+            return new MethodCall(
+                $queryBuilder,
+                new Identifier($fetchMethod)
+            );
+        }
+
+        return $queryBuilder;
     }
 
     private function createValueNode($value): Node
