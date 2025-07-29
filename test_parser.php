@@ -217,29 +217,8 @@ function testParameterDetection() {
 function generateTestConfig() {
     echo "\n=== GENERATING TEST CONFIGURATION ===\n";
 
-    $config = '<?php
-
-declare(strict_types=1);
-
-use Rector\Config\RectorConfig;
-use App\Rector\Doctrine\StepByStepPdoRector;
-
-return RectorConfig::configure()
-    ->withRules([
-        StepByStepPdoRector::class,
-    ])
-    ->withPaths([
-        __DIR__ . \'/src\',
-        __DIR__ . \'/tests/fixtures\', // Add test fixtures
-    ])
-    ->withSkip([
-        __DIR__ . \'/vendor\',
-        __DIR__ . \'/var\',
-    ])
-    ->withImportNames()
-    ->withParallel() // Enable parallel processing
-    ->withCache(__DIR__ . \'/var/cache/rector\'); // Enable caching
-';
+    $config = '); // Enable caching
+\'';
 
     echo "Save this as rector.php:\n";
     echo str_repeat("-", 50) . "\n";

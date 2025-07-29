@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-use App\Rector\Doctrine\StepByStepPdoRector;
+use App\Rector\Doctrine\PdoToQueryBuilderRector;
 use Rector\Config\RectorConfig;
 
 return static function (RectorConfig $rectorConfig): void {
-    $rectorConfig->rule(StepByStepPdoRector::class);
+    $rectorConfig->rule(PdoToQueryBuilderRector::class);
 
     // Optional: Add debugging for development
     $rectorConfig->parallel();

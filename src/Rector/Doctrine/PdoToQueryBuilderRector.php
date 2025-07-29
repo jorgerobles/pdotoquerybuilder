@@ -9,6 +9,7 @@ use PhpParser\Node\Arg;
 use PhpParser\Node\Expr\MethodCall;
 use PhpParser\Node\Expr\Variable;
 use PhpParser\Node\Identifier;
+use PhpParser\Node\Scalar\LNumber;
 use PhpParser\Node\Scalar\String_;
 use Rector\Rector\AbstractRector;
 use Symplify\RuleDocGenerator\ValueObject\CodeSample\CodeSample;
@@ -76,9 +77,14 @@ final class PdoToQueryBuilderRector extends AbstractRector
         if (!$var instanceof Variable) {
             return false;
         }
-
         // Verificar si la variable es $pdo o similar
-        return $this->isName($var, 'pdo') || $this->isName($var, 'db') || $this->isName($var, 'connection');
+        if ($this->isName($var, 'pdo')) {
+            return true;
+        }
+        if ($this->isName($var, 'db')) {
+            return true;
+        }
+        return $this->isName($var, 'connection');
     }
 
     private function convertPdoPrepareToQueryBuilder(MethodCall $node): ?Node
@@ -93,9 +99,8 @@ final class PdoToQueryBuilderRector extends AbstractRector
         }
 
         $sql = $sqlString->value;
-        $queryBuilder = $this->buildQueryBuilderFromSql($sql);
 
-        return $queryBuilder;
+        return $this->buildQueryBuilderFromSql($sql);
     }
 
     private function convertPdoQueryToQueryBuilder(MethodCall $node): ?Node
@@ -113,7 +118,7 @@ final class PdoToQueryBuilderRector extends AbstractRector
         $queryBuilder = $this->buildQueryBuilderFromSql($sql);
 
         // Para query(), añadir executeQuery() al final
-        if ($queryBuilder) {
+        if ($queryBuilder instanceof MethodCall) {
             return new MethodCall($queryBuilder, new Identifier('executeQuery'));
         }
 
@@ -133,15 +138,19 @@ final class PdoToQueryBuilderRector extends AbstractRector
             ),
             new Identifier('createQueryBuilder')
         );
-
         // Parsear diferentes tipos de consultas
         if (strpos($sqlUpper, 'SELECT') === 0) {
             return $this->buildSelectQuery($queryBuilder, $sql);
-        } elseif (strpos($sqlUpper, 'INSERT') === 0) {
+        }
+        if (strpos($sqlUpper, 'INSERT') === 0) {
             return $this->buildInsertQuery($queryBuilder, $sql);
-        } elseif (strpos($sqlUpper, 'UPDATE') === 0) {
+        }
+        if (strpos($sqlUpper, 'UPDATE') === 0) {
             return $this->buildUpdateQuery($queryBuilder, $sql);
-        } elseif (strpos($sqlUpper, 'DELETE') === 0) {
+        }
+
+        // Parsear diferentes tipos de consultas
+        if (strpos($sqlUpper, 'DELETE') === 0) {
             return $this->buildDeleteQuery($queryBuilder, $sql);
         }
 
@@ -231,16 +240,16 @@ final class PdoToQueryBuilderRector extends AbstractRector
             $queryBuilder = new MethodCall(
                 $queryBuilder,
                 new Identifier('setMaxResults'),
-                [new Arg($this->nodeFactory->createNumber((int)$parts['limit']))]
+                [new Arg(new LNumber((int)$parts['limit']))]
             );
         }
 
         // OFFSET clause
         if (!empty($parts['offset'])) {
-            $queryBuilder = new MethodCall(
+            return new MethodCall(
                 $queryBuilder,
                 new Identifier('setFirstResult'),
-                [new Arg($this->nodeFactory->createNumber((int)$parts['offset']))]
+                [new Arg(new LNumber((int)$parts['offset']))]
             );
         }
 
@@ -260,7 +269,7 @@ final class PdoToQueryBuilderRector extends AbstractRector
 
         // VALUES
         if (!empty($parts['columns']) && !empty($parts['values'])) {
-            foreach ($parts['columns'] as $index => $column) {
+            foreach ($parts['columns'] as $column) {
                 $queryBuilder = new MethodCall(
                     $queryBuilder,
                     new Identifier('setValue'),
@@ -292,7 +301,7 @@ final class PdoToQueryBuilderRector extends AbstractRector
             foreach ($setPairs as $pair) {
                 $pair = trim($pair);
                 if (strpos($pair, '=') !== false) {
-                    list($column, $value) = explode('=', $pair, 2);
+                    [$column, $value] = explode('=', $pair, 2);
                     $queryBuilder = new MethodCall(
                         $queryBuilder,
                         new Identifier('set'),
@@ -307,7 +316,7 @@ final class PdoToQueryBuilderRector extends AbstractRector
 
         // WHERE clause
         if (!empty($parts['where'])) {
-            $queryBuilder = new MethodCall(
+            return new MethodCall(
                 $queryBuilder,
                 new Identifier('where'),
                 [new Arg(new String_($parts['where']))]
@@ -330,7 +339,7 @@ final class PdoToQueryBuilderRector extends AbstractRector
 
         // WHERE clause
         if (!empty($parts['where'])) {
-            $queryBuilder = new MethodCall(
+            return new MethodCall(
                 $queryBuilder,
                 new Identifier('where'),
                 [new Arg(new String_($parts['where']))]
@@ -353,7 +362,7 @@ final class PdoToQueryBuilderRector extends AbstractRector
         // FROM with possible alias
         if (preg_match('/FROM\s+(\w+)(?:\s+(?:AS\s+)?(\w+))?/i', $sql, $matches)) {
             $parts['from'] = trim($matches[1]);
-            if (!empty($matches[2])) {
+            if (isset($matches[2]) && ($matches[2] !== '' && $matches[2] !== '0')) {
                 $parts['fromAlias'] = trim($matches[2]);
             }
         }
@@ -400,7 +409,7 @@ final class PdoToQueryBuilderRector extends AbstractRector
 
         if (preg_match('/(\w+)(?:\s+(?:AS\s+)?(\w+))?/i', $fromClause, $matches)) {
             $parts['table'] = trim($matches[1]);
-            if (!empty($matches[2])) {
+            if (isset($matches[2]) && ($matches[2] !== '' && $matches[2] !== '0')) {
                 $parts['alias'] = trim($matches[2]);
             }
         }
@@ -420,7 +429,7 @@ final class PdoToQueryBuilderRector extends AbstractRector
                 $joins[] = [
                     'type' => trim($match[1]),
                     'table' => trim($match[2]),
-                    'alias' => !empty($match[3]) ? trim($match[3]) : null,
+                    'alias' => empty($match[3]) ? null : trim($match[3]),
                     'condition' => trim($match[4])
                 ];
             }
@@ -448,8 +457,6 @@ final class PdoToQueryBuilderRector extends AbstractRector
                 $method = 'innerJoin';
                 break;
             case strpos($joinType, 'CROSS') !== false:
-                $method = 'join'; // Doctrine no tiene crossJoin específico
-                break;
             default:
                 $method = 'join'; // JOIN por defecto
                 break;
@@ -528,23 +535,6 @@ final class PdoToQueryBuilderRector extends AbstractRector
         return $parts;
     }
 
-    private function parseWhereClause(string $where): array
-    {
-        // Dividir por AND/OR (simplificado)
-        $conditions = preg_split('/\s+AND\s+/i', $where);
-
-        // Convertir parámetros posicionales (?) a nombrados
-        $paramCount = 0;
-        foreach ($conditions as &$condition) {
-            $condition = preg_replace_callback('/\?/', function ($matches) use (&$paramCount) {
-                $paramCount++;
-                return ":param$paramCount";
-            }, $condition);
-        }
-
-        return $conditions;
-    }
-
     private function buildWhereClause(MethodCall $queryBuilder, string $whereClause): MethodCall
     {
         $whereExpression = $this->parseComplexWhereClause($whereClause);
@@ -555,7 +545,7 @@ final class PdoToQueryBuilderRector extends AbstractRector
     {
         // Convertir parámetros posicionales a nombrados primero
         $paramCount = 0;
-        $where = preg_replace_callback('/\?/', function ($matches) use (&$paramCount) {
+        $where = preg_replace_callback('/\?/', function ($matches) use (&$paramCount): string {
             $paramCount++;
             return ":param$paramCount";
         }, $where);
@@ -580,14 +570,16 @@ final class PdoToQueryBuilderRector extends AbstractRector
 
         for ($i = 0; $i < strlen($expression); $i++) {
             $char = $expression[$i];
-
             // Manejo de comillas
             if (($char === '"' || $char === "'") && !$inQuotes) {
                 $inQuotes = true;
                 $quoteChar = $char;
                 $current .= $char;
                 continue;
-            } elseif ($char === $quoteChar && $inQuotes) {
+            }
+
+            // Manejo de comillas
+            if ($char === $quoteChar && $inQuotes) {
                 $inQuotes = false;
                 $quoteChar = '';
                 $current .= $char;
@@ -651,7 +643,7 @@ final class PdoToQueryBuilderRector extends AbstractRector
 
     private function parseTokensToTree(array $tokens): array
     {
-        if (empty($tokens)) {
+        if ($tokens === []) {
             return [];
         }
 

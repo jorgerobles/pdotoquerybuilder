@@ -3,21 +3,15 @@
 // Enhanced rector.php configuration for better formatting
 declare(strict_types=1);
 
-use App\Rector\Doctrine\StepByStepPdoRector;
+use App\Rector\Doctrine\PdoToQueryBuilderRector;
 use Rector\Config\RectorConfig;
 
 return RectorConfig::configure()
     ->withRules([
-        StepByStepPdoRector::class,
+        PdoToQueryBuilderRector::class,
     ])
     ->withPaths([
-        __DIR__ . '/src',
-        __DIR__ . '/tests/fixtures',
-    ])
-    ->withSkip([
-        __DIR__ . '/vendor',
-        __DIR__ . '/var',
-        __DIR__ . '/public/bundles',
+        __DIR__ . '/temp',
     ])
     // Enable proper imports and formatting
     ->withImportNames(
