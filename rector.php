@@ -37,7 +37,7 @@ return RectorConfig::configure()
         ]
     )
     ->withPaths([
-        __DIR__ . '/samples',
+        __DIR__ . '/src',
     ])
     // Enable proper imports and formatting
     ->withImportNames(
@@ -49,7 +49,7 @@ return RectorConfig::configure()
     // Set up caching for faster subsequent runs
     ->withCache(__DIR__ . '/var/cache/rector')
     // Configure formatting options
-    ->withPhpSets(php81: true)
+    ->withPhpSets(php74: true)
     // Add code quality rules that help with formatting
     ->withPreparedSets(
         deadCode: true,

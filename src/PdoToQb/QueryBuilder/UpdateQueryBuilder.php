@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace JDR\Rector\PdoToQb\QueryBuilder;
 
-use App\Rector\Doctrine\Parser\WhereClauseParser;
 use PhpParser\Node\Expr\MethodCall;
 use JDR\Rector\PdoToQb\Parser\CommonSqlParser;
 use JDR\Rector\PdoToQb\Parser\SetClauseParser;
