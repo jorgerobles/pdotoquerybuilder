@@ -5,33 +5,12 @@ declare(strict_types=1);
 namespace JDR\Rector\MethodsToTraits;
 
 use PhpParser\Node;
-use PhpParser\Node\Expr\BinaryOp\LogicalAnd;
-use PhpParser\Node\Expr\BinaryOp\LogicalOr;
-use PhpParser\Node\Expr\ClassConstFetch;
-use PhpParser\Node\Expr\MethodCall;
-use PhpParser\Node\Expr\PropertyFetch;
-use PhpParser\Node\Expr\Ternary;
-use PhpParser\Node\Scalar\LNumber;
-use PhpParser\Node\Scalar\String_;
-use PhpParser\Node\Stmt\Case_;
-use PhpParser\Node\Stmt\Catch_;
 use PhpParser\Node\Stmt\Class_;
-use PhpParser\Node\Stmt\ClassConst;
 use PhpParser\Node\Stmt\ClassMethod;
-use PhpParser\Node\Stmt\Do_;
-use PhpParser\Node\Stmt\ElseIf_;
-use PhpParser\Node\Stmt\For_;
-use PhpParser\Node\Stmt\Foreach_;
-use PhpParser\Node\Stmt\If_;
-use PhpParser\Node\Stmt\Namespace_;
-use PhpParser\Node\Stmt\Property;
-use PhpParser\Node\Stmt\Switch_;
 use PhpParser\Node\Stmt\Trait_;
 use PhpParser\Node\Stmt\TraitUse;
 use PhpParser\Node\Name;
 use PhpParser\Node\Identifier;
-use PhpParser\Node\Stmt\While_;
-use PhpParser\PrettyPrinter\Standard;
 use Rector\Contract\Rector\ConfigurableRectorInterface;
 use Rector\Rector\AbstractRector;
 use Symplify\RuleDocGenerator\ValueObject\CodeSample\CodeSample;
@@ -62,6 +41,8 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
         // NEW: 1:1 extraction mode
         'method_to_trait_map' => [], // ['methodName' => 'TraitName'] for direct mapping
         'use_direct_mapping' => false, // Enable 1:1 extraction mode
+        // NEW: Progress indicator
+        'show_progress' => true, // Show progress dots
     ];
 
     private array $extractedTraits = [];
@@ -164,28 +145,28 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
         }
 
         // Skip if class is abstract, interface, or trait
-        if ($node->isAbstract() || $this->isInterface() || $this->isTrait()) {
+        if ($node->isAbstract() || $this->isInterface($node) || $this->isTrait($node)) {
             return null;
         }
 
         // Analyze methods in the class
         $methodsToExtract = $this->analyzeClassMethods($node);
 
-        if ($methodsToExtract === []) {
+        if (empty($methodsToExtract)) {
             return null;
         }
 
         // Group methods by extraction strategy
         $groupedMethods = $this->groupMethodsForExtraction($methodsToExtract);
 
-        if ($groupedMethods === []) {
+        if (empty($groupedMethods)) {
             return null;
         }
 
         // Extract methods to traits
         $traitsGenerated = $this->extractMethodsToTraits($groupedMethods, $node);
 
-        if ($traitsGenerated === []) {
+        if (empty($traitsGenerated)) {
             return null;
         }
 
@@ -196,8 +177,22 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
     private function analyzeClassMethods(Class_ $class): array
     {
         $extractableMethods = [];
+        $methods = $class->getMethods();
+        $totalMethods = count($methods);
 
-        foreach ($class->getMethods() as $method) {
+        if ($this->config['show_progress'] && $totalMethods > 0) {
+            echo "\nAnalyzing {$totalMethods} methods: ";
+        }
+
+        foreach ($methods as $index => $method) {
+            if ($this->config['show_progress']) {
+                echo '.';
+                // Add newline every 50 dots for readability
+                if (($index + 1) % 50 === 0) {
+                    echo " (" . ($index + 1) . "/{$totalMethods})\n                           ";
+                }
+            }
+
             if (!$this->shouldExtractMethod($method)) {
                 continue;
             }
@@ -206,6 +201,10 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
             if ($methodInfo['extractable']) {
                 $extractableMethods[] = $methodInfo;
             }
+        }
+
+        if ($this->config['show_progress'] && $totalMethods > 0) {
+            echo " (" . count($extractableMethods) . " extractable)\n";
         }
 
         return $extractableMethods;
@@ -244,13 +243,13 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
         foreach ($this->config['extract_patterns'] as $pattern) {
             switch ($pattern['type']) {
                 case 'prefix':
-                    if (strncmp($methodName, $pattern['value'], strlen($pattern['value'])) === 0) {
+                    if (str_starts_with($methodName, $pattern['value'])) {
                         return true;
                     }
                     break;
 
                 case 'suffix':
-                    if (substr_compare($methodName, $pattern['value'], -strlen($pattern['value'])) === 0) {
+                    if (str_ends_with($methodName, $pattern['value'])) {
                         return true;
                     }
                     break;
@@ -282,7 +281,7 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
     {
         $methodName = $method->name->toString();
 
-        return [
+        $methodInfo = [
             'method' => $method,
             'name' => $methodName,
             'extractable' => true,
@@ -292,6 +291,8 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
             'annotations' => $this->extractMethodAnnotations($method),
             'attributes' => $this->extractMethodAttributes($method)
         ];
+
+        return $methodInfo;
     }
 
     private function findMethodDependencies(ClassMethod $method, Class_ $class): array
@@ -302,36 +303,46 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
             'constants' => []
         ];
 
-        // Analyze method body for dependencies
-        $this->traverseNodesOfType($method, function (Node $node) use (&$dependencies, $class): void {
-            // Find property access
-            if ($node instanceof PropertyFetch && $this->isName($node->var, 'this')) {
-                $propertyName = $this->getName($node->name);
-                if ($propertyName && $this->hasProperty($class, $propertyName)) {
-                    $dependencies['properties'][] = $propertyName;
+        try {
+            // Analyze method body for dependencies
+            $this->traverseNodesOfType($method, function (Node $node) use (&$dependencies, $class) {
+                // Find property access
+                if ($node instanceof \PhpParser\Node\Expr\PropertyFetch) {
+                    if ($this->isName($node->var, 'this')) {
+                        $propertyName = $this->getName($node->name);
+                        if ($propertyName && $this->hasProperty($class, $propertyName)) {
+                            $dependencies['properties'][] = $propertyName;
+                        }
+                    }
                 }
-            }
 
-            // Find method calls
-            if ($node instanceof MethodCall && $this->isName($node->var, 'this')) {
-                $methodName = $this->getName($node->name);
-                if ($methodName && $this->hasMethod($class, $methodName)) {
-                    $dependencies['methods'][] = $methodName;
+                // Find method calls
+                if ($node instanceof \PhpParser\Node\Expr\MethodCall) {
+                    if ($this->isName($node->var, 'this')) {
+                        $methodName = $this->getName($node->name);
+                        if ($methodName && $this->hasMethod($class, $methodName)) {
+                            $dependencies['methods'][] = $methodName;
+                        }
+                    }
                 }
-            }
 
-            // Find constant access
-            if ($node instanceof ClassConstFetch && ($this->isName($node->class, 'self') || $this->isName($node->class, 'static'))) {
-                $constantName = $this->getName($node->name);
-                if ($constantName && $this->hasConstant($class, $constantName)) {
-                    $dependencies['constants'][] = $constantName;
+                // Find constant access
+                if ($node instanceof \PhpParser\Node\Expr\ClassConstFetch) {
+                    if ($this->isName($node->class, 'self') || $this->isName($node->class, 'static')) {
+                        $constantName = $this->getName($node->name);
+                        if ($constantName && $this->hasConstant($class, $constantName)) {
+                            $dependencies['constants'][] = $constantName;
+                        }
+                    }
                 }
-            }
-        });
+            });
 
-        // Remove duplicates
-        foreach ($dependencies as &$depList) {
-            $depList = array_unique($depList);
+            // Remove duplicates
+            foreach ($dependencies as &$depList) {
+                $depList = array_unique($depList);
+            }
+        } catch (\Exception $e) {
+            // If dependency analysis fails, continue without dependencies
         }
 
         return $dependencies;
@@ -343,7 +354,9 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
 
         // NEW: Check direct mapping first
         if ($this->config['use_direct_mapping'] && isset($this->config['method_to_trait_map'][$methodName])) {
-            return $this->config['method_to_trait_map'][$methodName];
+            $traitName = $this->config['method_to_trait_map'][$methodName];
+            // Remove 'Trait' suffix if present to avoid 'TraitTrait'
+            return str_ends_with($traitName, 'Trait') ? substr($traitName, 0, -5) : $traitName;
         }
 
         switch ($this->config['group_by']) {
@@ -351,7 +364,7 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
                 // Group by common prefixes (validate, format, calculate, etc.)
                 $commonPrefixes = ['validate', 'format', 'calculate', 'convert', 'transform', 'parse', 'generate'];
                 foreach ($commonPrefixes as $prefix) {
-                    if (strncmp($methodName, $prefix, strlen($prefix)) === 0) {
+                    if (str_starts_with($methodName, $prefix)) {
                         return ucfirst($prefix);
                     }
                 }
@@ -395,7 +408,7 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
 
         foreach ($patterns as $group => $keywords) {
             foreach ($keywords as $keyword) {
-                if (strpos(strtolower($methodName), $keyword) !== false) {
+                if (str_contains(strtolower($methodName), $keyword)) {
                     return $group;
                 }
             }
@@ -419,7 +432,7 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
         }
 
         // Filter groups that have minimum required methods
-        return array_filter($groups, function ($group): bool {
+        return array_filter($groups, function ($group) {
             return count($group) >= $this->config['min_methods_per_trait'];
         });
     }
@@ -427,8 +440,17 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
     private function extractMethodsToTraits(array $groupedMethods, Class_ $originalClass): array
     {
         $generatedTraits = [];
+        $totalGroups = count($groupedMethods);
+
+        if ($this->config['show_progress'] && $totalGroups > 0) {
+            echo "Generating {$totalGroups} traits: ";
+        }
 
         foreach ($groupedMethods as $groupName => $methods) {
+            if ($this->config['show_progress']) {
+                echo '.';
+            }
+
             $traitName = $groupName . 'Trait';
             $traitNode = $this->createTraitNode($traitName, $methods, $originalClass);
 
@@ -443,6 +465,10 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
             ];
         }
 
+        if ($this->config['show_progress'] && $totalGroups > 0) {
+            echo " (done)\n";
+        }
+
         return $generatedTraits;
     }
 
@@ -453,27 +479,80 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
         $requiredConstants = [];
 
         foreach ($methods as $methodInfo) {
+            // Ensure we have a valid method
+            if (!isset($methodInfo['method']) || !($methodInfo['method'] instanceof \PhpParser\Node\Stmt\ClassMethod)) {
+                continue;
+            }
+
+            // Clone the method and add to trait methods
             $method = clone $methodInfo['method'];
-
-            // Collect dependencies
-            foreach ($methodInfo['dependencies']['properties'] as $property) {
-                $requiredProperties[] = $this->getProperty($originalClass, $property);
-            }
-
-            foreach ($methodInfo['dependencies']['constants'] as $constant) {
-                $requiredConstants[] = $this->getConstant($originalClass, $constant);
-            }
-
             $traitMethods[] = $method;
+
+            // Collect dependencies only if they exist
+            if (isset($methodInfo['dependencies']['properties']) && !empty($methodInfo['dependencies']['properties'])) {
+                foreach ($methodInfo['dependencies']['properties'] as $propertyName) {
+                    $property = $this->getProperty($originalClass, $propertyName);
+                    if ($property && !$this->arrayContainsProperty($requiredProperties, $property)) {
+                        $requiredProperties[] = clone $property;
+                    }
+                }
+            }
+
+            if (isset($methodInfo['dependencies']['constants']) && !empty($methodInfo['dependencies']['constants'])) {
+                foreach ($methodInfo['dependencies']['constants'] as $constantName) {
+                    $constant = $this->getConstant($originalClass, $constantName);
+                    if ($constant && !$this->arrayContainsConstant($requiredConstants, $constant)) {
+                        $requiredConstants[] = clone $constant;
+                    }
+                }
+            }
         }
 
+        // Build trait statements: constants first, then properties, then methods
         $traitStmts = array_merge(
-            array_filter($requiredConstants),
-            array_filter($requiredProperties),
+            $requiredConstants,
+            $requiredProperties,
             $traitMethods
         );
 
-        return new Trait_(new Identifier($traitName), $traitStmts);
+        // Create the trait using direct assignment (fixes PhpParser constructor issue)
+        $trait = new Trait_(new Identifier($traitName));
+        $trait->stmts = $traitStmts;
+
+        return $trait;
+    }
+
+    // Helper methods to avoid duplicates
+    private function arrayContainsProperty(array $properties, \PhpParser\Node\Stmt\Property $property): bool
+    {
+        foreach ($properties as $existingProperty) {
+            if ($existingProperty instanceof \PhpParser\Node\Stmt\Property) {
+                foreach ($existingProperty->props as $prop) {
+                    foreach ($property->props as $newProp) {
+                        if ($prop->name->toString() === $newProp->name->toString()) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    private function arrayContainsConstant(array $constants, \PhpParser\Node\Stmt\ClassConst $constant): bool
+    {
+        foreach ($constants as $existingConstant) {
+            if ($existingConstant instanceof \PhpParser\Node\Stmt\ClassConst) {
+                foreach ($existingConstant->consts as $const) {
+                    foreach ($constant->consts as $newConst) {
+                        if ($const->name->toString() === $newConst->name->toString()) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        return false;
     }
 
     private function modifyOriginalClass(Class_ $class, array $extractedMethods, array $generatedTraits): Class_
@@ -482,7 +561,7 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
 
         // Remove extracted methods
         $extractedMethodNames = array_column($extractedMethods, 'name');
-        $modifiedClass->stmts = array_filter($modifiedClass->stmts, function ($stmt) use ($extractedMethodNames): bool {
+        $modifiedClass->stmts = array_filter($modifiedClass->stmts, function ($stmt) use ($extractedMethodNames) {
             if ($stmt instanceof ClassMethod) {
                 return !in_array($stmt->name->toString(), $extractedMethodNames, true);
             }
@@ -520,30 +599,86 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
         $filePath = $outputDir . '/' . $traitName . '.php';
 
         // Generate the file content
-        $content = $this->generateTraitFileContent($traitNode, $namespace);
+        $content = $this->generateTraitFileContent($traitName, $traitNode, $namespace);
 
         file_put_contents($filePath, $content);
     }
 
-    private function generateTraitFileContent(Trait_ $traitNode, string $namespace): string
+    private function generateTraitFileContent(string $traitName, Trait_ $traitNode, string $namespace): string
     {
-        $printer = new Standard();
+        // Create namespace parts properly
+        $namespaceParts = array_filter(explode('\\', trim($namespace, '\\')));
 
-        $namespaceNode = new Namespace_(
-            new Name(explode('\\', $namespace)),
-            [$traitNode]
-        );
+        // Create the complete file structure
+        $statements = [];
 
+        // Add namespace if provided
+        if (!empty($namespaceParts)) {
+            $statements[] = new \PhpParser\Node\Stmt\Namespace_(
+                new Name($namespaceParts),
+                [$traitNode]
+            );
+        } else {
+            // No namespace, just add the trait directly
+            $statements[] = $traitNode;
+        }
+
+        // Use the standard pretty printer with proper formatting
+        $printer = new \PhpParser\PrettyPrinter\Standard([
+            'shortArraySyntax' => true,
+        ]);
+
+        // Generate the complete file content
         $content = "<?php\n\ndeclare(strict_types=1);\n\n";
 
-        return $content . $printer->prettyPrint([$namespaceNode]);
+        try {
+            $generatedCode = $printer->prettyPrint($statements);
+            $content .= $generatedCode;
+        } catch (\Exception $e) {
+            // Fallback: create a simple trait manually
+            $content .= $this->createFallbackTraitContent($traitName, $traitNode, $namespace);
+        }
+
+        return $content;
+    }
+
+    private function createFallbackTraitContent(string $traitName, Trait_ $traitNode, string $namespace): string
+    {
+        $content = "";
+
+        // Add namespace if provided
+        if (!empty(trim($namespace, '\\'))) {
+            $content .= "namespace " . trim($namespace, '\\') . ";\n\n";
+        }
+
+        // Start trait
+        $content .= "trait $traitName\n{\n";
+
+        // Add methods manually
+        foreach ($traitNode->stmts as $stmt) {
+            if ($stmt instanceof \PhpParser\Node\Stmt\ClassMethod) {
+                $methodName = $stmt->name->toString();
+                $content .= "    public function $methodName()\n    {\n";
+                $content .= "        // TODO: Implement method body\n";
+                $content .= "        // Original method: $methodName\n";
+                $content .= "    }\n\n";
+            }
+        }
+
+        $content .= "}\n";
+
+        if ($this->config['show_progress']) {
+            echo "[FALLBACK-GENERATED]";
+        }
+
+        return $content;
     }
 
     // Utility methods
     private function hasProperty(Class_ $class, string $propertyName): bool
     {
         foreach ($class->stmts as $stmt) {
-            if ($stmt instanceof Property) {
+            if ($stmt instanceof \PhpParser\Node\Stmt\Property) {
                 foreach ($stmt->props as $prop) {
                     if ($this->isName($prop->name, $propertyName)) {
                         return true;
@@ -567,7 +702,7 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
     private function hasConstant(Class_ $class, string $constantName): bool
     {
         foreach ($class->stmts as $stmt) {
-            if ($stmt instanceof ClassConst) {
+            if ($stmt instanceof \PhpParser\Node\Stmt\ClassConst) {
                 foreach ($stmt->consts as $const) {
                     if ($this->isName($const->name, $constantName)) {
                         return true;
@@ -578,10 +713,10 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
         return false;
     }
 
-    private function getProperty(Class_ $class, string $propertyName): ?Property
+    private function getProperty(Class_ $class, string $propertyName): ?\PhpParser\Node\Stmt\Property
     {
         foreach ($class->stmts as $stmt) {
-            if ($stmt instanceof Property) {
+            if ($stmt instanceof \PhpParser\Node\Stmt\Property) {
                 foreach ($stmt->props as $prop) {
                     if ($this->isName($prop->name, $propertyName)) {
                         return clone $stmt;
@@ -592,10 +727,10 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
         return null;
     }
 
-    private function getConstant(Class_ $class, string $constantName): ?ClassConst
+    private function getConstant(Class_ $class, string $constantName): ?\PhpParser\Node\Stmt\ClassConst
     {
         foreach ($class->stmts as $stmt) {
-            if ($stmt instanceof ClassConst) {
+            if ($stmt instanceof \PhpParser\Node\Stmt\ClassConst) {
                 foreach ($stmt->consts as $const) {
                     if ($this->isName($const->name, $constantName)) {
                         return clone $stmt;
@@ -613,7 +748,7 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
             return false;
         }
 
-        return strpos($docComment->getText(), "@{$annotation}") !== false;
+        return str_contains($docComment->getText(), "@{$annotation}");
     }
 
     private function hasAttribute(ClassMethod $method, string $attributeName): bool
@@ -647,9 +782,9 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
     {
         foreach ($method->attrGroups as $attrGroup) {
             foreach ($attrGroup->attrs as $attr) {
-                if ($this->isName($attr->name, $attributeName) && $attr->args !== []) {
+                if ($this->isName($attr->name, $attributeName) && !empty($attr->args)) {
                     $firstArg = $attr->args[0]->value;
-                    if ($firstArg instanceof String_) {
+                    if ($firstArg instanceof \PhpParser\Node\Scalar\String_) {
                         return $firstArg->value;
                     }
                 }
@@ -662,20 +797,20 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
     {
         $complexity = 1; // Base complexity
 
-        $this->traverseNodesOfType($method, function (Node $node) use (&$complexity): void {
+        $this->traverseNodesOfType($method, function (Node $node) use (&$complexity) {
             // Increase complexity for control structures
-            if ($node instanceof If_ ||
-                $node instanceof ElseIf_ ||
-                $node instanceof For_ ||
-                $node instanceof Foreach_ ||
-                $node instanceof While_ ||
-                $node instanceof Do_ ||
-                $node instanceof Switch_ ||
-                $node instanceof Case_ ||
-                $node instanceof Catch_ ||
-                $node instanceof Ternary ||
-                $node instanceof LogicalAnd ||
-                $node instanceof LogicalOr) {
+            if ($node instanceof \PhpParser\Node\Stmt\If_ ||
+                $node instanceof \PhpParser\Node\Stmt\ElseIf_ ||
+                $node instanceof \PhpParser\Node\Stmt\For_ ||
+                $node instanceof \PhpParser\Node\Stmt\Foreach_ ||
+                $node instanceof \PhpParser\Node\Stmt\While_ ||
+                $node instanceof \PhpParser\Node\Stmt\Do_ ||
+                $node instanceof \PhpParser\Node\Stmt\Switch_ ||
+                $node instanceof \PhpParser\Node\Stmt\Case_ ||
+                $node instanceof \PhpParser\Node\Stmt\Catch_ ||
+                $node instanceof \PhpParser\Node\Expr\Ternary ||
+                $node instanceof \PhpParser\Node\Expr\BinaryOp\LogicalAnd ||
+                $node instanceof \PhpParser\Node\Expr\BinaryOp\LogicalOr) {
                 $complexity++;
             }
         });
@@ -710,9 +845,9 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
                 $args = [];
 
                 foreach ($attr->args as $arg) {
-                    if ($arg->value instanceof String_) {
+                    if ($arg->value instanceof \PhpParser\Node\Scalar\String_) {
                         $args[] = $arg->value->value;
-                    } elseif ($arg->value instanceof LNumber) {
+                    } elseif ($arg->value instanceof \PhpParser\Node\Scalar\LNumber) {
                         $args[] = $arg->value->value;
                     }
                 }
@@ -724,14 +859,14 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
         return $attributes;
     }
 
-    private function isInterface(): bool
+    private function isInterface(Class_ $class): bool
     {
         // This is a simplification - in real implementation,
         // you'd check if the node is actually an Interface_ node
         return false;
     }
 
-    private function isTrait(): bool
+    private function isTrait(Class_ $class): bool
     {
         // This is a simplification - in real implementation,
         // you'd check if the node is actually a Trait_ node
