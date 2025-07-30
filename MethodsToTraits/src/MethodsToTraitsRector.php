@@ -43,15 +43,44 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
         'use_direct_mapping' => false, // Enable 1:1 extraction mode
         // NEW: Progress indicator
         'show_progress' => true, // Show progress dots
+        // NEW: Smart dependency migration
+        'auto_move_dependencies' => true, // Automatically move single-use dependencies
+        'move_private_methods' => true, // Move private methods used only by extracted methods
+        'move_private_properties' => true, // Move private properties used only by extracted methods
+        // NEW: Visibility scopes to include for dependency migration
+        'move_method_scopes' => ['private'], // ['private', 'protected', 'public']
+        'move_property_scopes' => ['private'], // ['private', 'protected', 'public']
     ];
 
     private array $extractedTraits = [];
     private array $methodAnalysis = [];
+    // NEW: Track usage across all methods
+    private array $methodUsageMap = []; // ['methodName' => ['usedBy' => [methods], 'isPublic' => bool]]
+    private array $propertyUsageMap = []; // ['propertyName' => ['usedBy' => [methods], 'visibility' => string]]
 
     public function configure(array $configuration): void
     {
         $this->config = array_merge($this->config, $configuration);
     }
+        private function traverseNodesOfType(Node $node, callable $callback): void
+    {
+        $callback($node);
+
+        foreach ($node->getSubNodeNames() as $name) {
+            $subNode = $node->$name;
+
+            if ($subNode instanceof Node) {
+                $this->traverseNodesOfType($subNode, $callback);
+            } elseif (is_array($subNode)) {
+                foreach ($subNode as $subSubNode) {
+                    if ($subSubNode instanceof Node) {
+                        $this->traverseNodesOfType($subSubNode, $callback);
+                    }
+                }
+            }
+        }
+    }
+
 
     public function getRuleDefinition(): RuleDefinition
     {
@@ -182,6 +211,11 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
 
         if ($this->config['show_progress'] && $totalMethods > 0) {
             echo "\nAnalyzing {$totalMethods} methods: ";
+        }
+
+        // PHASE 1: Build usage maps for smart dependency detection
+        if ($this->config['auto_move_dependencies']) {
+            $this->buildUsageMaps($class);
         }
 
         foreach ($methods as $index => $method) {
@@ -477,6 +511,7 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
         $traitMethods = [];
         $requiredProperties = [];
         $requiredConstants = [];
+        $extractedMethodNames = array_column($methods, 'name');
 
         foreach ($methods as $methodInfo) {
             // Ensure we have a valid method
@@ -488,12 +523,15 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
             $method = clone $methodInfo['method'];
             $traitMethods[] = $method;
 
-            // Collect dependencies only if they exist
+            // Collect dependencies
             if (isset($methodInfo['dependencies']['properties']) && !empty($methodInfo['dependencies']['properties'])) {
                 foreach ($methodInfo['dependencies']['properties'] as $propertyName) {
                     $property = $this->getProperty($originalClass, $propertyName);
                     if ($property && !$this->arrayContainsProperty($requiredProperties, $property)) {
-                        $requiredProperties[] = clone $property;
+                        // NEW: Check if property should be moved to trait
+                        if ($this->shouldMovePropertyToTrait($propertyName, $extractedMethodNames)) {
+                            $requiredProperties[] = clone $property;
+                        }
                     }
                 }
             }
@@ -503,6 +541,18 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
                     $constant = $this->getConstant($originalClass, $constantName);
                     if ($constant && !$this->arrayContainsConstant($requiredConstants, $constant)) {
                         $requiredConstants[] = clone $constant;
+                    }
+                }
+            }
+
+            // NEW: Check for internal method dependencies and move them if appropriate
+            if (isset($methodInfo['dependencies']['methods']) && !empty($methodInfo['dependencies']['methods'])) {
+                foreach ($methodInfo['dependencies']['methods'] as $dependentMethodName) {
+                    if ($this->shouldMoveMethodToTrait($dependentMethodName, $extractedMethodNames, $originalClass)) {
+                        $dependentMethod = $this->getMethod($originalClass, $dependentMethodName);
+                        if ($dependentMethod && !$this->arrayContainsMethod($traitMethods, $dependentMethod)) {
+                            $traitMethods[] = clone $dependentMethod;
+                        }
                     }
                 }
             }
@@ -559,12 +609,40 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
     {
         $modifiedClass = clone $class;
 
-        // Remove extracted methods
+        // Get all methods and properties that were moved to traits
         $extractedMethodNames = array_column($extractedMethods, 'name');
-        $modifiedClass->stmts = array_filter($modifiedClass->stmts, function ($stmt) use ($extractedMethodNames) {
-            if ($stmt instanceof ClassMethod) {
-                return !in_array($stmt->name->toString(), $extractedMethodNames, true);
+        $movedMethods = [];
+        $movedProperties = [];
+
+        // Collect all moved dependencies from traits
+        foreach ($generatedTraits as $trait) {
+            foreach ($trait['node']->stmts as $stmt) {
+                if ($stmt instanceof \PhpParser\Node\Stmt\ClassMethod) {
+                    $movedMethods[] = $stmt->name->toString();
+                } elseif ($stmt instanceof \PhpParser\Node\Stmt\Property) {
+                    foreach ($stmt->props as $prop) {
+                        $movedProperties[] = $prop->name->toString();
+                    }
+                }
             }
+        }
+
+        // Remove extracted methods AND moved dependency methods
+        $modifiedClass->stmts = array_filter($modifiedClass->stmts, function ($stmt) use ($movedMethods, $movedProperties) {
+            // Remove methods that were moved to traits
+            if ($stmt instanceof \PhpParser\Node\Stmt\ClassMethod) {
+                return !in_array($stmt->name->toString(), $movedMethods, true);
+            }
+
+            // Remove properties that were moved to traits
+            if ($stmt instanceof \PhpParser\Node\Stmt\Property) {
+                $stmt->props = array_filter($stmt->props, function ($prop) use ($movedProperties) {
+                    return !in_array($prop->name->toString(), $movedProperties, true);
+                });
+                // Remove the property statement if no properties left
+                return !empty($stmt->props);
+            }
+
             return true;
         });
 
@@ -873,22 +951,172 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
         return false;
     }
 
-    private function traverseNodesOfType(Node $node, callable $callback): void
+    /**
+     * NEW: Build comprehensive usage maps for smart dependency migration
+     */
+    private function buildUsageMaps(Class_ $class): void
     {
-        $callback($node);
+        $this->methodUsageMap = [];
+        $this->propertyUsageMap = [];
 
-        foreach ($node->getSubNodeNames() as $name) {
-            $subNode = $node->$name;
+        // Initialize maps for all methods and properties
+        foreach ($class->getMethods() as $method) {
+            $methodName = $method->name->toString();
+            $this->methodUsageMap[$methodName] = [
+                'usedBy' => [],
+                'isPublic' => $method->isPublic(),
+                'isPrivate' => $method->isPrivate(),
+                'isProtected' => $method->isProtected(),
+            ];
+        }
 
-            if ($subNode instanceof Node) {
-                $this->traverseNodesOfType($subNode, $callback);
-            } elseif (is_array($subNode)) {
-                foreach ($subNode as $subSubNode) {
-                    if ($subSubNode instanceof Node) {
-                        $this->traverseNodesOfType($subSubNode, $callback);
-                    }
+        foreach ($class->stmts as $stmt) {
+            if ($stmt instanceof \PhpParser\Node\Stmt\Property) {
+                foreach ($stmt->props as $prop) {
+                    $propertyName = $prop->name->toString();
+                    $this->propertyUsageMap[$propertyName] = [
+                        'usedBy' => [],
+                        'isPublic' => $stmt->isPublic(),
+                        'isPrivate' => $stmt->isPrivate(),
+                        'isProtected' => $stmt->isProtected(),
+                    ];
                 }
             }
         }
+
+        // Analyze usage patterns across all methods
+        foreach ($class->getMethods() as $method) {
+            $methodName = $method->name->toString();
+            $this->analyzeMethodUsage($method, $methodName);
+        }
+    }
+
+    /**
+     * NEW: Analyze what methods and properties a specific method uses
+     */
+    private function analyzeMethodUsage(ClassMethod $method, string $callerMethodName): void
+    {
+        try {
+            $this->traverseNodesOfType($method, function (Node $node) use ($callerMethodName) {
+                // Track method calls
+                if ($node instanceof \PhpParser\Node\Expr\MethodCall) {
+                    if ($this->isName($node->var, 'this')) {
+                        $calledMethodName = $this->getName($node->name);
+                        if ($calledMethodName && isset($this->methodUsageMap[$calledMethodName])) {
+                            $this->methodUsageMap[$calledMethodName]['usedBy'][] = $callerMethodName;
+                        }
+                    }
+                }
+
+                // Track property access
+                if ($node instanceof \PhpParser\Node\Expr\PropertyFetch) {
+                    if ($this->isName($node->var, 'this')) {
+                        $propertyName = $this->getName($node->name);
+                        if ($propertyName && isset($this->propertyUsageMap[$propertyName])) {
+                            $this->propertyUsageMap[$propertyName]['usedBy'][] = $callerMethodName;
+                        }
+                    }
+                }
+            });
+        } catch (\Exception $e) {
+            // Continue if analysis fails
+        }
+    }
+
+    /**
+     * NEW: Determine if a method should be moved to the trait
+     */
+    private function shouldMoveMethodToTrait(string $methodName, array $extractedMethodNames, Class_ $originalClass): bool
+    {
+        if (!$this->config['auto_move_dependencies']) {
+            return false;
+        }
+
+        // Don't move if method doesn't exist in usage map
+        if (!isset($this->methodUsageMap[$methodName])) {
+            return false;
+        }
+
+        $usage = $this->methodUsageMap[$methodName];
+
+        // Check if method visibility is in allowed scopes
+        $allowedScopes = $this->config['move_method_scopes'] ?? ['private'];
+        $methodScope = $usage['isPrivate'] ? 'private' : ($usage['isProtected'] ? 'protected' : 'public');
+
+        if (!in_array($methodScope, $allowedScopes, true)) {
+            return false;
+        }
+
+        // Don't move if it's in the excluded methods list
+        if (in_array($methodName, $this->config['exclude_methods'], true)) {
+            return false;
+        }
+
+        // Check if method is ONLY used by methods being extracted
+        $usedBy = array_unique($usage['usedBy']);
+        $usedByExtracted = array_intersect($usedBy, $extractedMethodNames);
+
+        // Move if ALL usages are from extracted methods
+        return count($usedBy) > 0 && count($usedBy) === count($usedByExtracted);
+    }
+
+    /**
+     * NEW: Determine if a property should be moved to the trait
+     */
+    private function shouldMovePropertyToTrait(string $propertyName, array $extractedMethodNames): bool
+    {
+        if (!$this->config['auto_move_dependencies']) {
+            return false;
+        }
+
+        // Don't move if property doesn't exist in usage map
+        if (!isset($this->propertyUsageMap[$propertyName])) {
+            return false;
+        }
+
+        $usage = $this->propertyUsageMap[$propertyName];
+
+        // Check if property visibility is in allowed scopes
+        $allowedScopes = $this->config['move_property_scopes'] ?? ['private'];
+        $propertyScope = $usage['isPrivate'] ? 'private' : ($usage['isProtected'] ? 'protected' : 'public');
+
+        if (!in_array($propertyScope, $allowedScopes, true)) {
+            return false;
+        }
+
+        // Check if property is ONLY used by methods being extracted
+        $usedBy = array_unique($usage['usedBy']);
+        $usedByExtracted = array_intersect($usedBy, $extractedMethodNames);
+
+        // Move if ALL usages are from extracted methods
+        return count($usedBy) > 0 && count($usedBy) === count($usedByExtracted);
+    }
+
+    /**
+     * NEW: Get a method by name from class
+     */
+    private function getMethod(Class_ $class, string $methodName): ?\PhpParser\Node\Stmt\ClassMethod
+    {
+        foreach ($class->getMethods() as $method) {
+            if ($this->isName($method->name, $methodName)) {
+                return $method;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * NEW: Check if method array already contains a specific method
+     */
+    private function arrayContainsMethod(array $methods, \PhpParser\Node\Stmt\ClassMethod $targetMethod): bool
+    {
+        $targetName = $targetMethod->name->toString();
+        foreach ($methods as $method) {
+            if ($method instanceof \PhpParser\Node\Stmt\ClassMethod &&
+                $method->name->toString() === $targetName) {
+                return true;
+            }
+        }
+        return false;
     }
 }
