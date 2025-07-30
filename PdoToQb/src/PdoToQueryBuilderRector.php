@@ -178,19 +178,19 @@ final class PdoToQueryBuilderRector extends AbstractRector implements Configurab
         $this->commonParser->resetParameterCounter();
 
         $baseQueryBuilder = $this->createBaseQueryBuilder();
-
-        switch (true) {
-            case strncmp($sqlUpper, 'SELECT', strlen('SELECT')) === 0:
-                return $this->selectBuilder->build($baseQueryBuilder, $sql);
-            case strncmp($sqlUpper, 'INSERT', strlen('INSERT')) === 0:
-                return $this->insertBuilder->build($baseQueryBuilder, $sql);
-            case strncmp($sqlUpper, 'UPDATE', strlen('UPDATE')) === 0:
-                return $this->updateBuilder->build($baseQueryBuilder, $sql);
-            case strncmp($sqlUpper, 'DELETE', strlen('DELETE')) === 0:
-                return $this->deleteBuilder->build($baseQueryBuilder, $sql);
-            default:
-                return null;
+        if (strncmp($sqlUpper, 'SELECT', strlen('SELECT')) === 0) {
+            return $this->selectBuilder->build($baseQueryBuilder, $sql);
         }
+        if (strncmp($sqlUpper, 'INSERT', strlen('INSERT')) === 0) {
+            return $this->insertBuilder->build($baseQueryBuilder, $sql);
+        }
+        if (strncmp($sqlUpper, 'UPDATE', strlen('UPDATE')) === 0) {
+            return $this->updateBuilder->build($baseQueryBuilder, $sql);
+        }
+        if (strncmp($sqlUpper, 'DELETE', strlen('DELETE')) === 0) {
+            return $this->deleteBuilder->build($baseQueryBuilder, $sql);
+        }
+        return null;
     }
 
     private function createBaseQueryBuilder(): MethodCall

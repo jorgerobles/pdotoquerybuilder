@@ -12,12 +12,14 @@
     },
     "autoload": {
         "psr-4": {
-            "JDR\\Rector\\PdoToQb\\": "src/PdoToQb/"
+            "JDR\\Rector\\PdoToQb\\": "PdoToQb/src",
+            "JDR\\Rector\\MethodsToTraits\\": "MethodsToTraits/src"
         }
     },
     "autoload-dev": {
         "psr-4": {
-            "JDR\\Rector\\PdoToQb\\Tests\\": "tests/"
+            "JDR\\Rector\\PdoToQb\\Tests\\": "PdoToQb/tests",
+            "JDR\\Rector\\MethodsToTraits\\Tests\\": "MethodsToTraits/tests"
         }
     },
     "config": {
@@ -35,10 +37,10 @@
         "rector-dry": "rector process --dry-run",
         "rector-debug": "rector process --dry-run --debug",
         "test": "phpunit",
-        "test-select": "phpunit tests/SelectQueryBuilderTest.php",
-        "test-insert": "phpunit tests/InsertQueryBuilderTest.php",
-        "test-update": "phpunit tests/UpdateQueryBuilderTest.php",
-        "test-delete": "phpunit tests/DeleteQueryBuilderTest.php",
+        "test-pdo-select": "phpunit tests/SelectQueryBuilderTest.php",
+        "test-pdo-insert": "phpunit tests/InsertQueryBuilderTest.php",
+        "test-pdo-update": "phpunit tests/UpdateQueryBuilderTest.php",
+        "test-pdo-delete": "phpunit tests/DeleteQueryBuilderTest.php",
         "check": [
             "@rector-dry",
             "@test"
