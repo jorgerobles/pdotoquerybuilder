@@ -8,7 +8,8 @@ use Rector\Set\ValueObject\DowngradeLevelSetList;
 
 return RectorConfig::configure()
     ->withPaths([
-        __DIR__ . '/src',
+        __DIR__ . '/MethodsToTraits/src',
+        __DIR__ . '/PdoToQb/src',
     ])
     // Enable proper imports and formatting
     ->withImportNames(
