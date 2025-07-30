@@ -1,0 +1,167 @@
+<?php
+
+declare(strict_types=1);
+
+use Rector\Config\RectorConfig;
+use JDR\Rector\MethodsToTraits\PublicMethodsToTraitsRector;
+
+return static function (RectorConfig $rectorConfig): void {
+    // Basic configuration
+    $rectorConfig->paths([
+        __DIR__ . '/src',
+        __DIR__ . '/app',
+    ]);
+
+    // Configure the PublicMethodsToTraitsRector with custom settings
+    $rectorConfig->ruleWithConfiguration(PublicMethodsToTraitsRector::class, [
+        // Define extraction patterns
+        'extract_patterns' => [
+            [
+                'type' => 'prefix',
+                'value' => 'validate'
+            ],
+            [
+                'type' => 'prefix',
+                'value' => 'format'
+            ],
+            [
+                'type' => 'prefix',
+                'value' => 'calculate'
+            ],
+            [
+                'type' => 'annotation',
+                'value' => 'extractable'
+            ],
+            [
+                'type' => 'attribute',
+                'value' => 'Extractable'
+            ]
+        ],
+
+        // Trait configuration
+        'trait_namespace' => 'App\\Traits',
+        'output_directory' => __DIR__ . '/src/Traits',
+
+        // Grouping strategy: 'functionality', 'prefix', 'annotation', 'attribute'
+        'group_by' => 'functionality',
+
+        // Minimum methods required to create a trait
+        'min_methods_per_trait' => 2,
+
+        // Methods to exclude from extraction
+        'exclude_methods' => [
+            '__construct',
+            '__destruct',
+            '__call',
+            '__get',
+            '__set',
+            '__toString',
+            'main',
+            'execute',
+            'handle'
+        ],
+
+        // Configuration options
+        'preserve_visibility' => true,
+        'add_trait_use' => true,
+        'generate_files' => true
+    ]);
+
+    // NEW: Direct 1:1 method to trait mapping example
+    $rectorConfig->ruleWithConfiguration(PublicMethodsToTraitsRector::class, [
+        // Enable direct mapping mode
+        'use_direct_mapping' => true,
+
+        // Map specific methods to specific traits
+        'method_to_trait_map' => [
+            'validateEmail' => 'EmailValidationTrait',
+            'validatePhone' => 'PhoneValidationTrait',
+            'formatCurrency' => 'CurrencyFormatterTrait',
+            'calculateTax' => 'TaxCalculatorTrait',
+            'generateInvoiceNumber' => 'InvoiceGeneratorTrait',
+        ],
+
+        // Trait configuration
+        'trait_namespace' => 'App\\Traits\\Specific',
+        'output_directory' => __DIR__ . '/src/Traits/Specific',
+
+        // Other options still work
+        'preserve_visibility' => true,
+        'add_trait_use' => true,
+        'generate_files' => true,
+    ]);
+
+    // Enable imports
+    $rectorConfig->importNames();
+    $rectorConfig->removeUnusedImports();
+};
+
+// Advanced configuration example
+return static function (RectorConfig $rectorConfig): void {
+    $rectorConfig->paths([
+        __DIR__ . '/src',
+    ]);
+
+    // Multiple configurations for different extraction strategies
+
+    // Strategy 1: Extract by method prefixes
+    $rectorConfig->ruleWithConfiguration(PublicMethodsToTraitsRector::class, [
+        'extract_patterns' => [
+            ['type' => 'prefix', 'value' => 'validate'],
+            ['type' => 'prefix', 'value' => 'format'],
+            ['type' => 'prefix', 'value' => 'sanitize'],
+        ],
+        'group_by' => 'prefix',
+        'trait_namespace' => 'App\\Traits\\Validation',
+        'output_directory' => __DIR__ . '/src/Traits/Validation',
+        'min_methods_per_trait' => 2,
+    ]);
+
+    // Strategy 2: Extract by annotations
+    $rectorConfig->ruleWithConfiguration(PublicMethodsToTraitsRector::class, [
+        'extract_patterns' => [
+            ['type' => 'annotation', 'value' => 'helper'],
+            ['type' => 'annotation', 'value' => 'utility'],
+        ],
+        'group_by' => 'annotation',
+        'trait_namespace' => 'App\\Traits\\Helpers',
+        'output_directory' => __DIR__ . '/src/Traits/Helpers',
+        'min_methods_per_trait' => 1,
+    ]);
+
+    // Strategy 3: Extract by PHP 8 attributes
+    $rectorConfig->ruleWithConfiguration(PublicMethodsToTraitsRector::class, [
+        'extract_patterns' => [
+            ['type' => 'attribute', 'value' => 'Cacheable'],
+            ['type' => 'attribute', 'value' => 'Loggable'],
+        ],
+        'group_by' => 'attribute',
+        'trait_namespace' => 'App\\Traits\\Concerns',
+        'output_directory' => __DIR__ . '/src/Traits/Concerns',
+        'min_methods_per_trait' => 1,
+    ]);
+};
+
+// Simple configuration for quick start
+return static function (RectorConfig $rectorConfig): void {
+    $rectorConfig->paths([__DIR__ . '/src']);
+
+    // Extract all public methods with common prefixes
+    $rectorConfig->ruleWithConfiguration(PublicMethodsToTraitsRector::class, [
+        'extract_patterns' => [
+            ['type' => 'prefix', 'value' => 'get'],
+            ['type' => 'prefix', 'value' => 'set'],
+            ['type' => 'prefix', 'value' => 'is'],
+            ['type' => 'prefix', 'value' => 'has'],
+            ['type' => 'prefix', 'value' => 'validate'],
+            ['type' => 'prefix', 'value' => 'format'],
+            ['type' => 'prefix', 'value' => 'parse'],
+            ['type' => 'prefix', 'value' => 'generate'],
+        ],
+        'group_by' => 'functionality',
+        'trait_namespace' => 'App\\Traits',
+        'output_directory' => __DIR__ . '/src/Traits',
+        'min_methods_per_trait' => 3,
+        'generate_files' => true,
+    ]);
+};

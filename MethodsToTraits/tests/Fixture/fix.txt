@@ -1,0 +1,828 @@
+
+
+// =============================================================================
+// TEST FIXTURES
+// =============================================================================
+
+// File: tests/Fixture/validation_methods.php.inc
+/*
+<?php
+
+namespace tests\Fixture;
+
+class UserService
+{
+    public function validateEmail(string $email): bool
+    {
+        return filter_var($email, FILTER_VALIDATE_EMAIL) !== false;
+    }
+
+    public function validatePhone(string $phone): bool
+    {
+        return preg_match('/^\+?[1-9]\d{1,14}$/', $phone);
+    }
+
+    public function validateAge(int $age): bool
+    {
+        return $age >= 18 && $age <= 120;
+    }
+
+    public function saveUser(array $data): void
+    {
+        // Core business logic stays
+    }
+}
+
+?>
+    -----
+<?php
+
+namespace App;
+
+use App\Traits\ValidationTrait;
+
+class UserService
+{
+    use ValidationTrait;
+
+    public function saveUser(array $data): void
+    {
+        // Core business logic stays
+    }
+}
+
+?>
+    */
+
+    // File: tests/Fixture/formatting_methods.php.inc
+    /*
+<?php
+
+namespace tests\Fixture;
+
+class DataFormatter
+{
+    public function formatEmail(string $email): string
+    {
+        return strtolower(trim($email));
+    }
+
+    public function formatPhone(string $phone): string
+    {
+        return preg_replace('/[^\d+]/', '', $phone);
+    }
+
+    public function formatCurrency(float $amount): string
+    {
+        return ' . number_format($amount, 2);
+    }
+
+    public function processData(array $data): array
+    {
+        // Core logic remains
+        return $data;
+    }
+}
+
+?>
+-----
+<?php
+
+namespace App;
+
+use App\Traits\FormattingTrait;
+
+class DataFormatter
+{
+    use FormattingTrait;
+
+    public function processData(array $data): array
+    {
+        // Core logic remains
+        return $data;
+    }
+}
+
+?>
+*/
+
+// File: tests/Fixture/annotation_extraction.php.inc
+/*
+<?php
+
+namespace tests\Fixture;
+
+class ProductService
+{
+    /**
+     * @extractable
+     * @group utility
+     */
+public function generateSku(): string
+{
+    return 'SKU-' . uniqid();
+}
+
+/**
+ * @extractable
+ * @group utility
+ */
+public function generateBarcode(): string
+{
+    return 'BC-' . random_int(100000, 999999);
+}
+
+/**
+ * @extractable
+ * @group conversion
+ */
+public function convertPrice(float $price): string
+{
+    return ' . number_format($price, 2);
+    }
+
+    public function createProduct(array $data): array
+    {
+        return $data;
+    }
+}
+
+?>
+    -----
+<?php
+
+namespace App;
+
+use App\Traits\UtilityTrait;
+use App\Traits\ConversionTrait;
+
+class ProductService
+{
+    use UtilityTrait;
+    use ConversionTrait;
+
+    public function createProduct(array $data): array
+    {
+        return $data;
+    }
+}
+
+?>
+    */
+
+    // File: tests/Fixture/attribute_extraction.php.inc
+    /*
+<?php
+
+namespace tests\Fixture;
+
+class OrderService
+{
+    #[Extractable(group: 'caching')]
+    public function getCachedTotal(int $orderId): ?float
+    {
+        return $this->cache->get("order_total_{$orderId}");
+    }
+
+    #[Extractable(group: 'caching')]
+    public function setCachedTotal(int $orderId, float $total): void
+    {
+        $this->cache->set("order_total_{$orderId}", $total, 3600);
+    }
+
+    #[Extractable(group: 'logging')]
+    public function logOrderCreated(int $orderId): void
+    {
+        $this->logger->info("Order {$orderId} created");
+    }
+
+    #[Extractable(group: 'logging')]
+    public function logOrderUpdated(int $orderId): void
+    {
+        $this->logger->info("Order {$orderId} updated");
+    }
+
+    public function processOrder(array $data): array
+    {
+        return $data;
+    }
+}
+
+?>
+    -----
+<?php
+
+namespace App;
+
+use App\Traits\CachingTrait;
+use App\Traits\LoggingTrait;
+
+class OrderService
+{
+    use CachingTrait;
+    use LoggingTrait;
+
+    public function processOrder(array $data): array
+    {
+        return $data;
+    }
+}
+
+?>
+    */
+
+    // File: tests/Fixture/with_dependencies.php.inc
+    /*
+<?php
+
+namespace tests\Fixture;
+
+class PaymentService
+{
+    private $validator;
+    private const TAX_RATE = 0.21;
+    private const MAX_AMOUNT = 10000;
+
+    public function validateCard(string $cardNumber): bool
+    {
+        return $this->validator->validateCard($cardNumber);
+    }
+
+    public function validateAmount(float $amount): bool
+    {
+        return $amount > 0 && $amount <= self::MAX_AMOUNT;
+    }
+
+    public function calculateTax(float $amount): float
+    {
+        return $amount * self::TAX_RATE;
+    }
+
+    public function formatAmount(float $amount): string
+    {
+        return number_format($amount, 2) . ' EUR';
+    }
+
+    public function processPayment(array $data): array
+    {
+        return $data;
+    }
+}
+
+?>
+    -----
+<?php
+
+namespace App;
+
+use App\Traits\ValidationTrait;
+use App\Traits\CalculationTrait;
+use App\Traits\FormattingTrait;
+
+class PaymentService
+{
+    use ValidationTrait;
+    use CalculationTrait;
+    use FormattingTrait;
+
+    private $validator;
+    private const TAX_RATE = 0.21;
+    private const MAX_AMOUNT = 10000;
+
+    public function processPayment(array $data): array
+    {
+        return $data;
+    }
+}
+
+?>
+    */
+
+    // File: tests/Fixture/complex_grouping.php.inc
+    /*
+<?php
+
+namespace tests\Fixture;
+
+class AnalyticsService
+{
+    public function calculateAverage(array $numbers): float
+    {
+        return array_sum($numbers) / count($numbers);
+    }
+
+    public function calculateSum(array $numbers): float
+    {
+        return array_sum($numbers);
+    }
+
+    public function calculateMedian(array $numbers): float
+    {
+        sort($numbers);
+        $count = count($numbers);
+        $middle = floor(($count - 1) / 2);
+
+        if ($count % 2) {
+            return $numbers[$middle];
+        } else {
+            return ($numbers[$middle] + $numbers[$middle + 1]) / 2;
+        }
+    }
+
+    public function parseJson(string $json): array
+    {
+        return json_decode($json, true) ?? [];
+    }
+
+    public function parseXml(string $xml): array
+    {
+        $parsed = simplexml_load_string($xml);
+        return json_decode(json_encode($parsed), true);
+    }
+
+    public function generateReport(array $data): string
+    {
+        return json_encode($data);
+    }
+
+    public function generateChart(array $data): string
+    {
+        return '<chart>' . implode(',', $data) . '</chart>';
+    }
+
+    public function executeAnalysis(array $data): array
+    {
+        // Core business logic remains
+        return $data;
+    }
+}
+
+?>
+    -----
+<?php
+
+namespace App;
+
+use App\Traits\CalculationTrait;
+use App\Traits\ParsingTrait;
+use App\Traits\GenerationTrait;
+
+class AnalyticsService
+{
+    use CalculationTrait;
+    use ParsingTrait;
+    use GenerationTrait;
+
+    public function executeAnalysis(array $data): array
+    {
+        // Core business logic remains
+        return $data;
+    }
+}
+
+?>
+    */
+
+    // File: tests/Fixture/minimum_methods.php.inc
+    /*
+<?php
+
+namespace tests\Fixture;
+
+class MinimalService
+{
+    public function validateEmail(string $email): bool
+    {
+        return filter_var($email, FILTER_VALIDATE_EMAIL) !== false;
+    }
+
+    public function formatName(string $name): string
+    {
+        return ucwords(strtolower($name));
+    }
+
+    public function processData(array $data): array
+    {
+        return $data;
+    }
+}
+
+?>
+    -----
+<?php
+
+namespace App;
+
+class MinimalService
+{
+    // No traits added because each group has only 1 method
+    // and min_methods_per_trait is 2
+
+    public function validateEmail(string $email): bool
+    {
+        return filter_var($email, FILTER_VALIDATE_EMAIL) !== false;
+    }
+
+    public function formatName(string $name): string
+    {
+        return ucwords(strtolower($name));
+    }
+
+    public function processData(array $data): array
+    {
+        return $data;
+    }
+}
+
+?>
+    */
+
+    // File: tests/Fixture/excluded_methods.php.inc
+    /*
+<?php
+
+namespace tests\Fixture;
+
+class ExclusionService
+{
+    public function __construct()
+    {
+        // Constructor should not be extracted
+    }
+
+    public function __destruct()
+    {
+        // Destructor should not be extracted
+    }
+
+    public function validateEmail(string $email): bool
+    {
+        return filter_var($email, FILTER_VALIDATE_EMAIL) !== false;
+    }
+
+    public function validatePhone(string $phone): bool
+    {
+        return preg_match('/^\+?[1-9]\d{1,14}$/', $phone);
+    }
+
+    public function formatEmail(string $email): string
+    {
+        return strtolower(trim($email));
+    }
+
+    public function formatPhone(string $phone): string
+    {
+        return preg_replace('/[^\d+]/', '', $phone);
+    }
+}
+
+?>
+    -----
+<?php
+
+namespace App;
+
+use App\Traits\ValidationTrait;
+use App\Traits\FormattingTrait;
+
+class ExclusionService
+{
+    use ValidationTrait;
+    use FormattingTrait;
+
+    public function __construct()
+    {
+        // Constructor should not be extracted
+    }
+
+    public function __destruct()
+    {
+        // Destructor should not be extracted
+    }
+}
+
+?>
+    */
+
+    // =============================================================================
+    // UNIT TESTS FOR INDIVIDUAL COMPONENTS
+    // =============================================================================
+
+    class MethodAnalysisTest extends TestCase
+    {
+    private PublicMethodsToTraitsRector $rector;
+
+    protected function setUp(): void
+    {
+    $this->rector = new PublicMethodsToTraitsRector();
+    }
+
+    public function testMethodPatternMatching(): void
+    {
+    $this->rector->configure([
+    'extract_patterns' => [
+    ['type' => 'prefix', 'value' => 'validate']
+    ]
+    ]);
+
+    // Test that validateEmail matches the pattern
+    $method = $this->createMethodNode('validateEmail');
+    $this->assertTrue($this->rector->shouldExtractMethod($method));
+
+    // Test that saveUser doesn't match the pattern
+    $method = $this->createMethodNode('saveUser');
+    $this->assertFalse($this->rector->shouldExtractMethod($method));
+    }
+
+    public function testGroupingByFunctionality(): void
+    {
+    $this->rector->configure(['group_by' => 'functionality']);
+
+    $this->assertEquals('Validation', $this->rector->determineMethodGroup('validateEmail'));
+    $this->assertEquals('Formatting', $this->rector->determineMethodGroup('formatName'));
+    $this->assertEquals('Calculation', $this->rector->determineMethodGroup('calculateTax'));
+    $this->assertEquals('Generation', $this->rector->determineMethodGroup('generateId'));
+    $this->assertEquals('Parsing', $this->rector->determineMethodGroup('parseJson'));
+    $this->assertEquals('Utility', $this->rector->determineMethodGroup('getId'));
+    }
+
+    public function testGroupingByPrefix(): void
+    {
+    $this->rector->configure(['group_by' => 'prefix']);
+
+    $this->assertEquals('Validate', $this->rector->determineMethodGroup('validateEmail'));
+    $this->assertEquals('Format', $this->rector->determineMethodGroup('formatName'));
+    $this->assertEquals('Calculate', $this->rector->determineMethodGroup('calculateTax'));
+    $this->assertEquals('Utility', $this->rector->determineMethodGroup('getData'));
+    }
+
+    public function testDependencyAnalysis(): void
+    {
+    $classNode = $this->createClassWithDependencies();
+    $methodNode = $this->createMethodWithDependencies();
+
+    $dependencies = $this->rector->findMethodDependencies($methodNode, $classNode);
+
+    $this->assertContains('validator', $dependencies['properties']);
+    $this->assertContains('TAX_RATE', $dependencies['constants']);
+    }
+
+    public function testMinimumMethodsFilter(): void
+    {
+    $this->rector->configure(['min_methods_per_trait' => 3]);
+
+    $methods = [
+    ['group' => 'Validation', 'method' => 'validateEmail'],
+    ['group' => 'Validation', 'method' => 'validatePhone'],
+    ['group' => 'Formatting', 'method' => 'formatEmail'],
+    ];
+
+    $grouped = $this->rector->groupMethodsForExtraction($methods);
+
+    // Should be empty because no group has 3+ methods
+    $this->assertEmpty($grouped);
+    }
+
+    public function testExcludedMethods(): void
+    {
+    $this->rector->configure([
+    'exclude_methods' => ['__construct', '__destruct', 'main']
+    ]);
+
+    $constructorMethod = $this->createMethodNode('__construct');
+    $this->assertFalse($this->rector->shouldExtractMethod($constructorMethod));
+
+    $regularMethod = $this->createMethodNode('validateEmail');
+    $this->assertTrue($this->rector->shouldExtractMethod($regularMethod));
+    }
+
+    private function createMethodNode(string $name): \PhpParser\Node\Stmt\ClassMethod
+    {
+    return new \PhpParser\Node\Stmt\ClassMethod(
+    new \PhpParser\Node\Identifier($name),
+    [
+    'flags' => \PhpParser\Node\Stmt\Class_::MODIFIER_PUBLIC,
+    'stmts' => []
+    ]
+    );
+    }
+
+    private function createClassWithDependencies(): \PhpParser\Node\Stmt\Class_
+    {
+    return new \PhpParser\Node\Stmt\Class_(
+    new \PhpParser\Node\Identifier('TestClass'),
+    [
+    'stmts' => [
+    new \PhpParser\Node\Stmt\Property(
+    \PhpParser\Node\Stmt\Class_::MODIFIER_PRIVATE,
+    [new \PhpParser\Node\Stmt\PropertyProperty('validator')]
+    ),
+    new \PhpParser\Node\Stmt\ClassConst(
+    [new \PhpParser\Node\Const_('TAX_RATE', new \PhpParser\Node\Scalar\DNumber(0.21))]
+    )
+    ]
+    ]
+    );
+    }
+
+    private function createMethodWithDependencies(): \PhpParser\Node\Stmt\ClassMethod
+    {
+    return new \PhpParser\Node\Stmt\ClassMethod(
+    new \PhpParser\Node\Identifier('testMethod'),
+    [
+    'flags' => \PhpParser\Node\Stmt\Class_::MODIFIER_PUBLIC,
+    'stmts' => [
+    new \PhpParser\Node\Stmt\Return_(
+    new \PhpParser\Node\Expr\BinaryOp\Mul(
+    new \PhpParser\Node\Expr\Variable('amount'),
+    new \PhpParser\Node\Expr\ClassConstFetch(
+    new \PhpParser\Node\Name('self'),
+    new \PhpParser\Node\Identifier('TAX_RATE')
+    )
+    )
+    )
+    ]
+    ]
+    );
+    }
+    }
+
+    // =============================================================================
+    // INTEGRATION TESTS
+    // =============================================================================
+
+    class IntegrationTest extends TestCase
+    {
+    private string $tempDir;
+    private PublicMethodsToTraitsRector $rector;
+
+    protected function setUp(): void
+    {
+    $this->tempDir = sys_get_temp_dir() . '/rector_traits_test_' . uniqid();
+    mkdir($this->tempDir, 0777, true);
+
+    $this->rector = new PublicMethodsToTraitsRector();
+    $this->rector->configure([
+    'trait_namespace' => 'Test\\Traits',
+    'output_directory' => $this->tempDir,
+    'generate_files' => true,
+    ]);
+    }
+
+    protected function tearDown(): void
+    {
+    $this->removeDirectory($this->tempDir);
+    }
+
+    public function testFullExtractionWorkflow(): void
+    {
+    $sourceCode = '<?php
+class UserService
+{
+    public function validateEmail(string $email): bool
+    {
+        return filter_var($email, FILTER_VALIDATE_EMAIL) !== false;
+    }
+
+    public function validatePhone(string $phone): bool
+    {
+        return preg_match("/^\+?[1-9]\d{1,14}$/", $phone);
+    }
+
+    public function formatEmail(string $email): string
+    {
+        return strtolower(trim($email));
+    }
+
+    public function saveUser(array $data): void
+    {
+        // Core logic
+    }
+}';
+
+        $parser = new \PhpParser\Parser\Php7(new \PhpParser\Lexer());
+        $ast = $parser->parse($sourceCode);
+        $classNode = $ast[0];
+
+        $modifiedClass = $this->rector->refactor($classNode);
+
+        // Verify traits were added
+        $this->assertNotNull($modifiedClass);
+        $this->assertContains('ValidationTrait', $this->getTraitNames($modifiedClass));
+
+        // Verify trait files were generated
+        $this->assertFileExists($this->tempDir . '/ValidationTrait.php');
+    }
+
+    public function testTraitFileGeneration(): void
+    {
+        $traitName = 'TestTrait';
+        $methods = [
+            [
+                'method' => $this->createMethodNode('testMethod'),
+                'name' => 'testMethod',
+                'dependencies' => ['properties' => [], 'constants' => [], 'methods' => []]
+            ]
+        ];
+
+        $traitNode = $this->rector->createTraitNode($traitName, $methods, $this->createClassNode());
+        $this->rector->generateTraitFile($traitName, $traitNode);
+
+        $this->assertFileExists($this->tempDir . '/TestTrait.php');
+
+        $content = file_get_contents($this->tempDir . '/TestTrait.php');
+        $this->assertStringContains('trait TestTrait', $content);
+        $this->assertStringContains('public function testMethod', $content);
+    }
+
+    private function getTraitNames(\PhpParser\Node\Stmt\Class_ $class): array
+    {
+        $traitNames = [];
+        foreach ($class->stmts as $stmt) {
+            if ($stmt instanceof \PhpParser\Node\Stmt\TraitUse) {
+                foreach ($stmt->traits as $trait) {
+                    $traitNames[] = $trait->toString();
+                }
+            }
+        }
+        return $traitNames;
+    }
+
+    private function createClassNode(): \PhpParser\Node\Stmt\Class_
+    {
+        return new \PhpParser\Node\Stmt\Class_(
+            new \PhpParser\Node\Identifier('TestClass')
+        );
+    }
+
+    private function removeDirectory(string $dir): void
+    {
+        if (!is_dir($dir)) {
+            return;
+        }
+
+        $files = array_diff(scandir($dir), ['.', '..']);
+        foreach ($files as $file) {
+            $path = $dir . '/' . $file;
+            is_dir($path) ? $this->removeDirectory($path) : unlink($path);
+        }
+        rmdir($dir);
+    }
+}
+
+// =============================================================================
+// PERFORMANCE TESTS
+// =============================================================================
+
+class PerformanceTest extends TestCase
+{
+    public function testLargeClassProcessing(): void
+    {
+        $start = microtime(true);
+
+        // Create a large class with many methods
+        $largeClass = $this->createLargeClass(100);
+
+        $rector = new PublicMethodsToTraitsRector();
+        $rector->configure([
+            'extract_patterns' => [
+                ['type' => 'prefix', 'value' => 'validate'],
+                ['type' => 'prefix', 'value' => 'format'],
+            ],
+            'generate_files' => false, // Skip file generation for performance
+        ]);
+
+        $result = $rector->refactor($largeClass);
+
+        $elapsed = microtime(true) - $start;
+
+        // Should process within reasonable time (adjust threshold as needed)
+        $this->assertLessThan(5.0, $elapsed, 'Processing took too long');
+        $this->assertNotNull($result);
+    }
+
+    private function createLargeClass(int $methodCount): \PhpParser\Node\Stmt\Class_
+    {
+        $methods = [];
+
+        for ($i = 0; $i < $methodCount; $i++) {
+            $prefix = $i % 2 === 0 ? 'validate' : 'format';
+            $methods[] = new \PhpParser\Node\Stmt\ClassMethod(
+                new \PhpParser\Node\Identifier($prefix . 'Method' . $i),
+                [
+                    'flags' => \PhpParser\Node\Stmt\Class_::MODIFIER_PUBLIC,
+                    'stmts' => [
+                        new \PhpParser\Node\Stmt\Return_(
+                            new \PhpParser\Node\Scalar\String_('result')
+                        )
+                    ]
+                ]
+            );
+        }
+
+        return new \PhpParser\Node\Stmt\Class_(
+            new \PhpParser\Node\Identifier('LargeClass'),
+            ['stmts' => $methods]
+        );
+    }
+}

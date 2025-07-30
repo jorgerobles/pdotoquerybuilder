@@ -1,0 +1,2000 @@
+<?php
+
+// =============================================================================
+// EXAMPLE 6: NEW - Direct 1:1 Method to Trait Mapping
+// =============================================================================
+
+// Configuration for direct mapping
+$directMappingConfig = [
+    'use_direct_mapping' => true,
+    'method_to_trait_map' => [
+        'validateEmail' => 'EmailValidationTrait',
+        'validatePhone' => 'PhoneValidationTrait',
+        'formatCurrency' => 'CurrencyFormatterTrait',
+        'calculateTax' => 'TaxCalculatorTrait',
+    ],
+    'trait_namespace' => 'App\\Traits\\Specific',
+    'output_directory' => __DIR__ . '/src/Traits/Specific',
+];
+
+// BEFORE transformation
+class OrderService
+{
+    private $taxRate = 0.21;
+
+    public function validateEmail(string $email): bool
+    {
+        return filter_var($email, FILTER_VALIDATE_EMAIL) !== false;
+    }
+
+    public function validatePhone(string $phone): bool
+    {
+        return preg_match('/^\+?[1-9]\d{1,14}$/', $phone);
+    }
+
+    public function formatCurrency(float $amount): string
+    {
+        return '
+// EXAMPLE 1: Basic Validation and Formatting Methods
+// =============================================================================
+
+// BEFORE transformation
+class UserService
+{
+    private $database;
+    private $logger;
+
+    public function validateEmail(string $email): bool
+    {
+        return filter_var($email, FILTER_VALIDATE_EMAIL) !== false;
+    }
+
+    public function validatePhone(string $phone): bool
+    {
+        return preg_match('/^\+?[1-9]\d{1,14}$/', $phone);
+    }
+
+    public function validateAge(int $age): bool
+    {
+        return $age >= 18 && $age <= 120;
+    }
+
+    public function formatEmail(string $email): string
+    {
+        return strtolower(trim($email));
+    }
+
+    public function formatPhone(string $phone): string
+    {
+        return preg_replace('/[^\d+]/', '', $phone);
+    }
+
+    public function formatName(string $name): string
+    {
+        return ucwords(strtolower(trim($name)));
+    }
+
+    public function calculateAge(string $birthDate): int
+    {
+        $birth = new DateTime($birthDate);
+        $now = new DateTime();
+        return $birth->diff($now)->y;
+    }
+
+    public function calculateTax(float $amount): float
+    {
+        return $amount * 0.21;
+    }
+
+    public function saveUser(array $userData): void
+    {
+        // Main business logic that stays in the class
+        $this->database->save($userData);
+        $this->logger->info('User saved');
+    }
+
+    public function deleteUser(int $userId): void
+    {
+        // Main business logic that stays in the class
+        $this->database->delete($userId);
+        $this->logger->info('User deleted');
+    }
+}
+
+// AFTER transformation
+class UserService
+{
+    use ValidationTrait;
+    use FormattingTrait;
+    use CalculationTrait;
+
+    private $database;
+    private $logger;
+
+    public function saveUser(array $userData): void
+    {
+        // Main business logic that stays in the class
+        $this->database->save($userData);
+        $this->logger->info('User saved');
+    }
+
+    public function deleteUser(int $userId): void
+    {
+        // Main business logic that stays in the class
+        $this->database->delete($userId);
+        $this->logger->info('User deleted');
+    }
+}
+
+// Generated: src/Traits/ValidationTrait.php
+trait ValidationTrait
+{
+    public function validateEmail(string $email): bool
+    {
+        return filter_var($email, FILTER_VALIDATE_EMAIL) !== false;
+    }
+
+    public function validatePhone(string $phone): bool
+    {
+        return preg_match('/^\+?[1-9]\d{1,14}$/', $phone);
+    }
+
+    public function validateAge(int $age): bool
+    {
+        return $age >= 18 && $age <= 120;
+    }
+}
+
+// Generated: src/Traits/FormattingTrait.php
+trait FormattingTrait
+{
+    public function formatEmail(string $email): string
+    {
+        return strtolower(trim($email));
+    }
+
+    public function formatPhone(string $phone): string
+    {
+        return preg_replace('/[^\d+]/', '', $phone);
+    }
+
+    public function formatName(string $name): string
+    {
+        return ucwords(strtolower(trim($name)));
+    }
+}
+
+// Generated: src/Traits/CalculationTrait.php
+trait CalculationTrait
+{
+    public function calculateAge(string $birthDate): int
+    {
+        $birth = new DateTime($birthDate);
+        $now = new DateTime();
+        return $birth->diff($now)->y;
+    }
+
+    public function calculateTax(float $amount): float
+    {
+        return $amount * 0.21;
+    }
+}
+
+// =============================================================================
+// EXAMPLE 2: Using Annotations for Extraction
+// =============================================================================
+
+// BEFORE transformation
+class ProductService
+{
+    private $repository;
+
+    /**
+     * @extractable
+     * @group utility
+     */
+    public function generateSku(): string
+    {
+        return 'SKU-' . uniqid();
+    }
+
+    /**
+     * @extractable
+     * @group utility
+     */
+    public function generateBarcode(): string
+    {
+        return 'BC-' . random_int(100000, 999999);
+    }
+
+    /**
+     * @extractable
+     * @group conversion
+     */
+    public function convertPriceToDisplay(float $price): string
+    {
+        return ' . number_format($price, 2);
+    }
+
+    /**
+     * @extractable
+     * @group conversion
+     */
+    public function convertWeightToDisplay(float $weight): string
+    {
+        return $weight . ' kg';
+    }
+
+    // This method stays in the class (no @extractable annotation)
+    public function createProduct(array $data): Product
+    {
+        return $this->repository->create($data);
+    }
+}
+
+// AFTER transformation
+class ProductService
+{
+    use UtilityTrait;
+    use ConversionTrait;
+
+    private $repository;
+
+    public function createProduct(array $data): Product
+    {
+        return $this->repository->create($data);
+    }
+}
+
+// Generated: src/Traits/UtilityTrait.php
+trait UtilityTrait
+{
+    public function generateSku(): string
+    {
+        return 'SKU-' . uniqid();
+    }
+
+    public function generateBarcode(): string
+    {
+        return 'BC-' . random_int(100000, 999999);
+    }
+}
+
+// Generated: src/Traits/ConversionTrait.php
+trait ConversionTrait
+{
+    public function convertPriceToDisplay(float $price): string
+    {
+        return ' . number_format($price, 2);
+    }
+
+    public function convertWeightToDisplay(float $weight): string
+    {
+        return $weight . ' kg';
+    }
+}
+
+// =============================================================================
+// EXAMPLE 3: Using PHP 8 Attributes
+// =============================================================================
+
+// BEFORE transformation
+class OrderService
+{
+    private $cache;
+    private $logger;
+
+    #[Extractable(group: 'caching')]
+    public function getCachedTotal(int $orderId): ?float
+    {
+        return $this->cache->get("order_total_{$orderId}");
+    }
+
+    #[Extractable(group: 'caching')]
+    public function setCachedTotal(int $orderId, float $total): void
+    {
+        $this->cache->set("order_total_{$orderId}", $total, 3600);
+    }
+
+    #[Extractable(group: 'logging')]
+    public function logOrderCreated(int $orderId): void
+    {
+        $this->logger->info("Order {$orderId} created");
+    }
+
+    #[Extractable(group: 'logging')]
+    public function logOrderUpdated(int $orderId): void
+    {
+        $this->logger->info("Order {$orderId} updated");
+    }
+
+    // Core business logic stays
+    public function processOrder(array $orderData): Order
+    {
+        // Main business logic
+        return new Order($orderData);
+    }
+}
+
+// AFTER transformation
+class OrderService
+{
+    use CachingTrait;
+    use LoggingTrait;
+
+    private $cache;
+    private $logger;
+
+    public function processOrder(array $orderData): Order
+    {
+        // Main business logic
+        return new Order($orderData);
+    }
+}
+
+// Generated: src/Traits/CachingTrait.php
+trait CachingTrait
+{
+    public function getCachedTotal(int $orderId): ?float
+    {
+        return $this->cache->get("order_total_{$orderId}");
+    }
+
+    public function setCachedTotal(int $orderId, float $total): void
+    {
+        $this->cache->set("order_total_{$orderId}", $total, 3600);
+    }
+}
+
+// Generated: src/Traits/LoggingTrait.php
+trait LoggingTrait
+{
+    public function logOrderCreated(int $orderId): void
+    {
+        $this->logger->info("Order {$orderId} created");
+    }
+
+    public function logOrderUpdated(int $orderId): void
+    {
+        $this->logger->info("Order {$orderId} updated");
+    }
+}
+
+// =============================================================================
+// EXAMPLE 4: Complex Dependencies Handling
+// =============================================================================
+
+// BEFORE transformation
+class PaymentService
+{
+    private $gateway;
+    private $validator;
+    private const TAX_RATE = 0.21;
+    private const MAX_AMOUNT = 10000;
+
+    public function validateCard(string $cardNumber): bool
+    {
+        // Uses class property $validator
+        return $this->validator->validateCard($cardNumber);
+    }
+
+    public function validateAmount(float $amount): bool
+    {
+        // Uses class constant MAX_AMOUNT
+        return $amount > 0 && $amount <= self::MAX_AMOUNT;
+    }
+
+    public function calculateTotalWithTax(float $amount): float
+    {
+        // Uses class constant TAX_RATE
+        return $amount * (1 + self::TAX_RATE);
+    }
+
+    public function formatAmount(float $amount): string
+    {
+        // No dependencies - safe to extract
+        return number_format($amount, 2) . ' EUR';
+    }
+
+    public function processPayment(array $paymentData): PaymentResult
+    {
+        // Core business logic with dependencies
+        return $this->gateway->process($paymentData);
+    }
+}
+
+// AFTER transformation
+class PaymentService
+{
+    use ValidationTrait;
+    use CalculationTrait;
+    use FormattingTrait;
+
+    private $gateway;
+    private $validator;
+    private const TAX_RATE = 0.21;
+    private const MAX_AMOUNT = 10000;
+
+    public function processPayment(array $paymentData): PaymentResult
+    {
+        // Core business logic with dependencies
+        return $this->gateway->process($paymentData);
+    }
+}
+
+// Generated: src/Traits/ValidationTrait.php
+trait ValidationTrait
+{
+    // Required dependencies are included in the trait
+    private const MAX_AMOUNT = 10000;
+
+    public function validateCard(string $cardNumber): bool
+    {
+        // Uses class property $validator
+        return $this->validator->validateCard($cardNumber);
+    }
+
+    public function validateAmount(float $amount): bool
+    {
+        // Uses trait constant MAX_AMOUNT
+        return $amount > 0 && $amount <= self::MAX_AMOUNT;
+    }
+}
+
+// Generated: src/Traits/CalculationTrait.php
+trait CalculationTrait
+{
+    // Required dependencies are included in the trait
+    private const TAX_RATE = 0.21;
+
+    public function calculateTotalWithTax(float $amount): float
+    {
+        // Uses trait constant TAX_RATE
+        return $amount * (1 + self::TAX_RATE);
+    }
+}
+
+// Generated: src/Traits/FormattingTrait.php
+trait FormattingTrait
+{
+    public function formatAmount(float $amount): string
+    {
+        // No dependencies - safe to extract
+        return number_format($amount, 2) . ' EUR';
+    }
+}
+
+// =============================================================================
+// EXAMPLE 5: Advanced Configuration Usage
+// =============================================================================
+
+// Configuration for different extraction strategies
+$configurations = [
+    // Extract by method prefixes
+    'prefix_extraction' => [
+        'extract_patterns' => [
+            ['type' => 'prefix', 'value' => 'validate'],
+            ['type' => 'prefix', 'value' => 'format'],
+            ['type' => 'prefix', 'value' => 'parse'],
+            ['type' => 'prefix', 'value' => 'generate'],
+            ['type' => 'prefix', 'value' => 'convert'],
+        ],
+        'group_by' => 'prefix',
+        'min_methods_per_trait' => 2,
+    ],
+
+    // Extract by regex patterns
+    'regex_extraction' => [
+        'extract_patterns' => [
+            ['type' => 'regex', 'value' => '/^(get|set)[A-Z].*Display$/'],
+            ['type' => 'regex', 'value' => '/^(is|has)[A-Z].*Valid$/'],
+        ],
+        'group_by' => 'functionality',
+        'min_methods_per_trait' => 1,
+    ],
+
+    // Extract by custom annotations
+    'annotation_extraction' => [
+        'extract_patterns' => [
+            ['type' => 'annotation', 'value' => 'helper'],
+            ['type' => 'annotation', 'value' => 'utility'],
+            ['type' => 'annotation', 'value' => 'extractable'],
+        ],
+        'group_by' => 'annotation',
+        'min_methods_per_trait' => 1,
+    ],
+];
+
+// =============================================================================
+// COMMAND LINE USAGE EXAMPLES
+// =============================================================================
+
+/*
+# Basic usage - dry run to see what would be extracted
+vendor/bin/rector process --dry-run
+
+# Apply the transformation
+vendor/bin/rector process
+
+# Process only specific directory
+vendor/bin/rector process src/Services
+
+# With debug output
+vendor/bin/rector process --debug
+
+# Generate configuration
+vendor/bin/rector init
+
+# Custom configuration file
+vendor/bin/rector process --config=rector-traits.php
+*/
+
+// =============================================================================
+// COMPOSER.JSON SCRIPTS
+// =============================================================================
+
+/*
+{
+    "scripts": {
+        "rector-traits": "rector process --config=rector-traits.php",
+        "rector-traits-dry": "rector process --config=rector-traits.php --dry-run",
+        "rector-traits-debug": "rector process --config=rector-traits.php --debug"
+    }
+}
+*/
+
+// =============================================================================
+// PHPUNIT TESTS FOR THE RECTOR RULE
+// =============================================================================
+
+/*
+class PublicMethodsToTraitsRectorTest extends AbstractRectorTestCase
+{
+    public function testExtractValidationMethods(): void
+    {
+        $this->doTestFile(__DIR__ . '/Fixture/validation_methods.php.inc');
+    }
+
+    public function testExtractFormattingMethods(): void
+    {
+        $this->doTestFile(__DIR__ . '/Fixture/formatting_methods.php.inc');
+    }
+
+    public function testExtractWithAnnotations(): void
+    {
+        $this->doTestFile(__DIR__ . '/Fixture/annotation_extraction.php.inc');
+    }
+
+    public function testExtractWithAttributes(): void
+    {
+        $this->doTestFile(__DIR__ . '/Fixture/attribute_extraction.php.inc');
+    }
+
+    public function testHandleDependencies(): void
+    {
+        $this->doTestFile(__DIR__ . '/Fixture/with_dependencies.php.inc');
+    }
+
+    public function provideConfigFilePath(): string
+    {
+        return __DIR__ . '/config/rector-traits.php';
+    }
+}
+*/
+
+// =============================================================================
+// GENERATED TRAIT EXAMPLES WITH DIFFERENT GROUPING STRATEGIES
+// =============================================================================
+
+// Strategy: Group by prefix
+trait ValidateTrait
+{
+    public function validateEmail(string $email): bool
+    {
+        return filter_var($email, FILTER_VALIDATE_EMAIL) !== false;
+    }
+
+    public function validatePhone(string $phone): bool
+    {
+        return preg_match('/^\+?[1-9]\d{1,14}$/', $phone);
+    }
+}
+
+trait FormatTrait
+{
+    public function formatCurrency(float $amount): string
+    {
+        return ' . number_format($amount, 2);
+    }
+
+    public function formatDate(\DateTime $date): string
+    {
+        return $date->format('Y-m-d H:i:s');
+    }
+}
+
+// Strategy: Group by functionality
+trait DataProcessingTrait
+{
+    public function parseJson(string $json): array
+    {
+        return json_decode($json, true) ?? [];
+    }
+
+    public function convertArrayToXml(array $data): string
+    {
+        // Implementation here
+        return '<xml></xml>';
+    }
+
+    public function sanitizeInput(string $input): string
+    {
+        return htmlspecialchars(trim($input), ENT_QUOTES, 'UTF-8');
+    }
+}
+
+trait UtilityHelpersTrait
+{
+    public function generateUuid(): string
+    {
+        return sprintf(
+            '%04x%04x-%04x-%04x-%04x-%04x%04x%04x',
+            mt_rand(0, 0xffff), mt_rand(0, 0xffff),
+            mt_rand(0, 0xffff),
+            mt_rand(0, 0x0fff) | 0x4000,
+            mt_rand(0, 0x3fff) | 0x8000,
+            mt_rand(0, 0xffff), mt_rand(0, 0xffff), mt_rand(0, 0xffff)
+        );
+    }
+
+    public function slugify(string $text): string
+    {
+        return strtolower(trim(preg_replace('/[^A-Za-z0-9-]+/', '-', $text), '-'));
+    }
+} . number_format($amount, 2);
+    }
+
+    public function calculateTax(float $amount): float
+    {
+        return $amount * $this->taxRate;
+    }
+
+    // This method is NOT in the mapping, so it stays
+    public function processOrder(array $data): Order
+    {
+        // Core business logic
+        return new Order($data);
+    }
+
+    // This method is NOT in the mapping, so it stays
+    public function sendConfirmation(Order $order): void
+    {
+        // Core business logic
+        $this->emailService->send($order);
+    }
+}
+
+// AFTER transformation
+class OrderService
+{
+    use EmailValidationTrait;
+    use PhoneValidationTrait;
+    use CurrencyFormatterTrait;
+    use TaxCalculatorTrait;
+
+    private $taxRate = 0.21;
+
+    // Core business logic methods remain in the class
+    public function processOrder(array $data): Order
+    {
+        // Core business logic
+        return new Order($data);
+    }
+
+    public function sendConfirmation(Order $order): void
+    {
+        // Core business logic
+        $this->emailService->send($order);
+    }
+}
+
+// Generated: src/Traits/Specific/EmailValidationTrait.php
+trait EmailValidationTrait
+{
+    public function validateEmail(string $email): bool
+    {
+        return filter_var($email, FILTER_VALIDATE_EMAIL) !== false;
+    }
+}
+
+// Generated: src/Traits/Specific/PhoneValidationTrait.php
+trait PhoneValidationTrait
+{
+    public function validatePhone(string $phone): bool
+    {
+        return preg_match('/^\+?[1-9]\d{1,14}$/', $phone);
+    }
+}
+
+// Generated: src/Traits/Specific/CurrencyFormatterTrait.php
+trait CurrencyFormatterTrait
+{
+    public function formatCurrency(float $amount): string
+    {
+        return '
+// EXAMPLE 1: Basic Validation and Formatting Methods
+// =============================================================================
+
+// BEFORE transformation
+class UserService
+{
+    private $database;
+    private $logger;
+
+    public function validateEmail(string $email): bool
+    {
+        return filter_var($email, FILTER_VALIDATE_EMAIL) !== false;
+    }
+
+    public function validatePhone(string $phone): bool
+    {
+        return preg_match('/^\+?[1-9]\d{1,14}$/', $phone);
+    }
+
+    public function validateAge(int $age): bool
+    {
+        return $age >= 18 && $age <= 120;
+    }
+
+    public function formatEmail(string $email): string
+    {
+        return strtolower(trim($email));
+    }
+
+    public function formatPhone(string $phone): string
+    {
+        return preg_replace('/[^\d+]/', '', $phone);
+    }
+
+    public function formatName(string $name): string
+    {
+        return ucwords(strtolower(trim($name)));
+    }
+
+    public function calculateAge(string $birthDate): int
+    {
+        $birth = new DateTime($birthDate);
+        $now = new DateTime();
+        return $birth->diff($now)->y;
+    }
+
+    public function calculateTax(float $amount): float
+    {
+        return $amount * 0.21;
+    }
+
+    public function saveUser(array $userData): void
+    {
+        // Main business logic that stays in the class
+        $this->database->save($userData);
+        $this->logger->info('User saved');
+    }
+
+    public function deleteUser(int $userId): void
+    {
+        // Main business logic that stays in the class
+        $this->database->delete($userId);
+        $this->logger->info('User deleted');
+    }
+}
+
+// AFTER transformation
+class UserService
+{
+    use ValidationTrait;
+    use FormattingTrait;
+    use CalculationTrait;
+
+    private $database;
+    private $logger;
+
+    public function saveUser(array $userData): void
+    {
+        // Main business logic that stays in the class
+        $this->database->save($userData);
+        $this->logger->info('User saved');
+    }
+
+    public function deleteUser(int $userId): void
+    {
+        // Main business logic that stays in the class
+        $this->database->delete($userId);
+        $this->logger->info('User deleted');
+    }
+}
+
+// Generated: src/Traits/ValidationTrait.php
+trait ValidationTrait
+{
+    public function validateEmail(string $email): bool
+    {
+        return filter_var($email, FILTER_VALIDATE_EMAIL) !== false;
+    }
+
+    public function validatePhone(string $phone): bool
+    {
+        return preg_match('/^\+?[1-9]\d{1,14}$/', $phone);
+    }
+
+    public function validateAge(int $age): bool
+    {
+        return $age >= 18 && $age <= 120;
+    }
+}
+
+// Generated: src/Traits/FormattingTrait.php
+trait FormattingTrait
+{
+    public function formatEmail(string $email): string
+    {
+        return strtolower(trim($email));
+    }
+
+    public function formatPhone(string $phone): string
+    {
+        return preg_replace('/[^\d+]/', '', $phone);
+    }
+
+    public function formatName(string $name): string
+    {
+        return ucwords(strtolower(trim($name)));
+    }
+}
+
+// Generated: src/Traits/CalculationTrait.php
+trait CalculationTrait
+{
+    public function calculateAge(string $birthDate): int
+    {
+        $birth = new DateTime($birthDate);
+        $now = new DateTime();
+        return $birth->diff($now)->y;
+    }
+
+    public function calculateTax(float $amount): float
+    {
+        return $amount * 0.21;
+    }
+}
+
+// =============================================================================
+// EXAMPLE 2: Using Annotations for Extraction
+// =============================================================================
+
+// BEFORE transformation
+class ProductService
+{
+    private $repository;
+
+    /**
+     * @extractable
+     * @group utility
+     */
+    public function generateSku(): string
+    {
+        return 'SKU-' . uniqid();
+    }
+
+    /**
+     * @extractable
+     * @group utility
+     */
+    public function generateBarcode(): string
+    {
+        return 'BC-' . random_int(100000, 999999);
+    }
+
+    /**
+     * @extractable
+     * @group conversion
+     */
+    public function convertPriceToDisplay(float $price): string
+    {
+        return ' . number_format($price, 2);
+    }
+
+    /**
+     * @extractable
+     * @group conversion
+     */
+    public function convertWeightToDisplay(float $weight): string
+    {
+        return $weight . ' kg';
+    }
+
+    // This method stays in the class (no @extractable annotation)
+    public function createProduct(array $data): Product
+    {
+        return $this->repository->create($data);
+    }
+}
+
+// AFTER transformation
+class ProductService
+{
+    use UtilityTrait;
+    use ConversionTrait;
+
+    private $repository;
+
+    public function createProduct(array $data): Product
+    {
+        return $this->repository->create($data);
+    }
+}
+
+// Generated: src/Traits/UtilityTrait.php
+trait UtilityTrait
+{
+    public function generateSku(): string
+    {
+        return 'SKU-' . uniqid();
+    }
+
+    public function generateBarcode(): string
+    {
+        return 'BC-' . random_int(100000, 999999);
+    }
+}
+
+// Generated: src/Traits/ConversionTrait.php
+trait ConversionTrait
+{
+    public function convertPriceToDisplay(float $price): string
+    {
+        return ' . number_format($price, 2);
+    }
+
+    public function convertWeightToDisplay(float $weight): string
+    {
+        return $weight . ' kg';
+    }
+}
+
+// =============================================================================
+// EXAMPLE 3: Using PHP 8 Attributes
+// =============================================================================
+
+// BEFORE transformation
+class OrderService
+{
+    private $cache;
+    private $logger;
+
+    #[Extractable(group: 'caching')]
+    public function getCachedTotal(int $orderId): ?float
+    {
+        return $this->cache->get("order_total_{$orderId}");
+    }
+
+    #[Extractable(group: 'caching')]
+    public function setCachedTotal(int $orderId, float $total): void
+    {
+        $this->cache->set("order_total_{$orderId}", $total, 3600);
+    }
+
+    #[Extractable(group: 'logging')]
+    public function logOrderCreated(int $orderId): void
+    {
+        $this->logger->info("Order {$orderId} created");
+    }
+
+    #[Extractable(group: 'logging')]
+    public function logOrderUpdated(int $orderId): void
+    {
+        $this->logger->info("Order {$orderId} updated");
+    }
+
+    // Core business logic stays
+    public function processOrder(array $orderData): Order
+    {
+        // Main business logic
+        return new Order($orderData);
+    }
+}
+
+// AFTER transformation
+class OrderService
+{
+    use CachingTrait;
+    use LoggingTrait;
+
+    private $cache;
+    private $logger;
+
+    public function processOrder(array $orderData): Order
+    {
+        // Main business logic
+        return new Order($orderData);
+    }
+}
+
+// Generated: src/Traits/CachingTrait.php
+trait CachingTrait
+{
+    public function getCachedTotal(int $orderId): ?float
+    {
+        return $this->cache->get("order_total_{$orderId}");
+    }
+
+    public function setCachedTotal(int $orderId, float $total): void
+    {
+        $this->cache->set("order_total_{$orderId}", $total, 3600);
+    }
+}
+
+// Generated: src/Traits/LoggingTrait.php
+trait LoggingTrait
+{
+    public function logOrderCreated(int $orderId): void
+    {
+        $this->logger->info("Order {$orderId} created");
+    }
+
+    public function logOrderUpdated(int $orderId): void
+    {
+        $this->logger->info("Order {$orderId} updated");
+    }
+}
+
+// =============================================================================
+// EXAMPLE 4: Complex Dependencies Handling
+// =============================================================================
+
+// BEFORE transformation
+class PaymentService
+{
+    private $gateway;
+    private $validator;
+    private const TAX_RATE = 0.21;
+    private const MAX_AMOUNT = 10000;
+
+    public function validateCard(string $cardNumber): bool
+    {
+        // Uses class property $validator
+        return $this->validator->validateCard($cardNumber);
+    }
+
+    public function validateAmount(float $amount): bool
+    {
+        // Uses class constant MAX_AMOUNT
+        return $amount > 0 && $amount <= self::MAX_AMOUNT;
+    }
+
+    public function calculateTotalWithTax(float $amount): float
+    {
+        // Uses class constant TAX_RATE
+        return $amount * (1 + self::TAX_RATE);
+    }
+
+    public function formatAmount(float $amount): string
+    {
+        // No dependencies - safe to extract
+        return number_format($amount, 2) . ' EUR';
+    }
+
+    public function processPayment(array $paymentData): PaymentResult
+    {
+        // Core business logic with dependencies
+        return $this->gateway->process($paymentData);
+    }
+}
+
+// AFTER transformation
+class PaymentService
+{
+    use ValidationTrait;
+    use CalculationTrait;
+    use FormattingTrait;
+
+    private $gateway;
+    private $validator;
+    private const TAX_RATE = 0.21;
+    private const MAX_AMOUNT = 10000;
+
+    public function processPayment(array $paymentData): PaymentResult
+    {
+        // Core business logic with dependencies
+        return $this->gateway->process($paymentData);
+    }
+}
+
+// Generated: src/Traits/ValidationTrait.php
+trait ValidationTrait
+{
+    // Required dependencies are included in the trait
+    private const MAX_AMOUNT = 10000;
+
+    public function validateCard(string $cardNumber): bool
+    {
+        // Uses class property $validator
+        return $this->validator->validateCard($cardNumber);
+    }
+
+    public function validateAmount(float $amount): bool
+    {
+        // Uses trait constant MAX_AMOUNT
+        return $amount > 0 && $amount <= self::MAX_AMOUNT;
+    }
+}
+
+// Generated: src/Traits/CalculationTrait.php
+trait CalculationTrait
+{
+    // Required dependencies are included in the trait
+    private const TAX_RATE = 0.21;
+
+    public function calculateTotalWithTax(float $amount): float
+    {
+        // Uses trait constant TAX_RATE
+        return $amount * (1 + self::TAX_RATE);
+    }
+}
+
+// Generated: src/Traits/FormattingTrait.php
+trait FormattingTrait
+{
+    public function formatAmount(float $amount): string
+    {
+        // No dependencies - safe to extract
+        return number_format($amount, 2) . ' EUR';
+    }
+}
+
+// =============================================================================
+// EXAMPLE 5: Advanced Configuration Usage
+// =============================================================================
+
+// Configuration for different extraction strategies
+$configurations = [
+    // Extract by method prefixes
+    'prefix_extraction' => [
+        'extract_patterns' => [
+            ['type' => 'prefix', 'value' => 'validate'],
+            ['type' => 'prefix', 'value' => 'format'],
+            ['type' => 'prefix', 'value' => 'parse'],
+            ['type' => 'prefix', 'value' => 'generate'],
+            ['type' => 'prefix', 'value' => 'convert'],
+        ],
+        'group_by' => 'prefix',
+        'min_methods_per_trait' => 2,
+    ],
+
+    // Extract by regex patterns
+    'regex_extraction' => [
+        'extract_patterns' => [
+            ['type' => 'regex', 'value' => '/^(get|set)[A-Z].*Display$/'],
+            ['type' => 'regex', 'value' => '/^(is|has)[A-Z].*Valid$/'],
+        ],
+        'group_by' => 'functionality',
+        'min_methods_per_trait' => 1,
+    ],
+
+    // Extract by custom annotations
+    'annotation_extraction' => [
+        'extract_patterns' => [
+            ['type' => 'annotation', 'value' => 'helper'],
+            ['type' => 'annotation', 'value' => 'utility'],
+            ['type' => 'annotation', 'value' => 'extractable'],
+        ],
+        'group_by' => 'annotation',
+        'min_methods_per_trait' => 1,
+    ],
+];
+
+// =============================================================================
+// COMMAND LINE USAGE EXAMPLES
+// =============================================================================
+
+/*
+# Basic usage - dry run to see what would be extracted
+vendor/bin/rector process --dry-run
+
+# Apply the transformation
+vendor/bin/rector process
+
+# Process only specific directory
+vendor/bin/rector process src/Services
+
+# With debug output
+vendor/bin/rector process --debug
+
+# Generate configuration
+vendor/bin/rector init
+
+# Custom configuration file
+vendor/bin/rector process --config=rector-traits.php
+*/
+
+// =============================================================================
+// COMPOSER.JSON SCRIPTS
+// =============================================================================
+
+/*
+{
+    "scripts": {
+        "rector-traits": "rector process --config=rector-traits.php",
+        "rector-traits-dry": "rector process --config=rector-traits.php --dry-run",
+        "rector-traits-debug": "rector process --config=rector-traits.php --debug"
+    }
+}
+*/
+
+// =============================================================================
+// PHPUNIT TESTS FOR THE RECTOR RULE
+// =============================================================================
+
+/*
+class PublicMethodsToTraitsRectorTest extends AbstractRectorTestCase
+{
+    public function testExtractValidationMethods(): void
+    {
+        $this->doTestFile(__DIR__ . '/Fixture/validation_methods.php.inc');
+    }
+
+    public function testExtractFormattingMethods(): void
+    {
+        $this->doTestFile(__DIR__ . '/Fixture/formatting_methods.php.inc');
+    }
+
+    public function testExtractWithAnnotations(): void
+    {
+        $this->doTestFile(__DIR__ . '/Fixture/annotation_extraction.php.inc');
+    }
+
+    public function testExtractWithAttributes(): void
+    {
+        $this->doTestFile(__DIR__ . '/Fixture/attribute_extraction.php.inc');
+    }
+
+    public function testHandleDependencies(): void
+    {
+        $this->doTestFile(__DIR__ . '/Fixture/with_dependencies.php.inc');
+    }
+
+    public function provideConfigFilePath(): string
+    {
+        return __DIR__ . '/config/rector-traits.php';
+    }
+}
+*/
+
+// =============================================================================
+// GENERATED TRAIT EXAMPLES WITH DIFFERENT GROUPING STRATEGIES
+// =============================================================================
+
+// Strategy: Group by prefix
+trait ValidateTrait
+{
+    public function validateEmail(string $email): bool
+    {
+        return filter_var($email, FILTER_VALIDATE_EMAIL) !== false;
+    }
+
+    public function validatePhone(string $phone): bool
+    {
+        return preg_match('/^\+?[1-9]\d{1,14}$/', $phone);
+    }
+}
+
+trait FormatTrait
+{
+    public function formatCurrency(float $amount): string
+    {
+        return ' . number_format($amount, 2);
+    }
+
+    public function formatDate(\DateTime $date): string
+    {
+        return $date->format('Y-m-d H:i:s');
+    }
+}
+
+// Strategy: Group by functionality
+trait DataProcessingTrait
+{
+    public function parseJson(string $json): array
+    {
+        return json_decode($json, true) ?? [];
+    }
+
+    public function convertArrayToXml(array $data): string
+    {
+        // Implementation here
+        return '<xml></xml>';
+    }
+
+    public function sanitizeInput(string $input): string
+    {
+        return htmlspecialchars(trim($input), ENT_QUOTES, 'UTF-8');
+    }
+}
+
+trait UtilityHelpersTrait
+{
+    public function generateUuid(): string
+    {
+        return sprintf(
+            '%04x%04x-%04x-%04x-%04x-%04x%04x%04x',
+            mt_rand(0, 0xffff), mt_rand(0, 0xffff),
+            mt_rand(0, 0xffff),
+            mt_rand(0, 0x0fff) | 0x4000,
+            mt_rand(0, 0x3fff) | 0x8000,
+            mt_rand(0, 0xffff), mt_rand(0, 0xffff), mt_rand(0, 0xffff)
+        );
+    }
+
+    public function slugify(string $text): string
+    {
+        return strtolower(trim(preg_replace('/[^A-Za-z0-9-]+/', '-', $text), '-'));
+    }
+} . number_format($amount, 2);
+    }
+}
+
+// Generated: src/Traits/Specific/TaxCalculatorTrait.php
+trait TaxCalculatorTrait
+{
+    public function calculateTax(float $amount): float
+    {
+        return $amount * $this->taxRate; // Dependencies are handled
+    }
+}
+
+// =============================================================================
+// EXAMPLE 7: Mixed Approach - Direct Mapping + Pattern Matching
+// =============================================================================
+
+// You can use both approaches in the same project with different configurations
+
+// Configuration 1: Direct mapping for specific methods
+$rectorConfig->ruleWithConfiguration(PublicMethodsToTraitsRector::class, [
+    'use_direct_mapping' => true,
+    'method_to_trait_map' => [
+        'specialValidation' => 'SpecialValidationTrait',
+        'complexCalculation' => 'ComplexCalculationTrait',
+    ],
+    'trait_namespace' => 'App\\Traits\\Custom',
+    'output_directory' => __DIR__ . '/src/Traits/Custom',
+]);
+
+// Configuration 2: Pattern-based for remaining methods
+$rectorConfig->ruleWithConfiguration(PublicMethodsToTraitsRector::class, [
+    'use_direct_mapping' => false, // Default pattern matching
+    'extract_patterns' => [
+        ['type' => 'prefix', 'value' => 'validate'],
+        ['type' => 'prefix', 'value' => 'format'],
+    ],
+    'group_by' => 'functionality',
+    'trait_namespace' => 'App\\Traits\\Auto',
+    'output_directory' => __DIR__ . '/src/Traits/Auto',
+]);
+
+// =============================================================================
+// EXAMPLE 1: Basic Validation and Formatting Methods
+// =============================================================================
+
+// BEFORE transformation
+class UserService
+{
+    private $database;
+    private $logger;
+
+    public function validateEmail(string $email): bool
+    {
+        return filter_var($email, FILTER_VALIDATE_EMAIL) !== false;
+    }
+
+    public function validatePhone(string $phone): bool
+    {
+        return preg_match('/^\+?[1-9]\d{1,14}$/', $phone);
+    }
+
+    public function validateAge(int $age): bool
+    {
+        return $age >= 18 && $age <= 120;
+    }
+
+    public function formatEmail(string $email): string
+    {
+        return strtolower(trim($email));
+    }
+
+    public function formatPhone(string $phone): string
+    {
+        return preg_replace('/[^\d+]/', '', $phone);
+    }
+
+    public function formatName(string $name): string
+    {
+        return ucwords(strtolower(trim($name)));
+    }
+
+    public function calculateAge(string $birthDate): int
+    {
+        $birth = new DateTime($birthDate);
+        $now = new DateTime();
+        return $birth->diff($now)->y;
+    }
+
+    public function calculateTax(float $amount): float
+    {
+        return $amount * 0.21;
+    }
+
+    public function saveUser(array $userData): void
+    {
+        // Main business logic that stays in the class
+        $this->database->save($userData);
+        $this->logger->info('User saved');
+    }
+
+    public function deleteUser(int $userId): void
+    {
+        // Main business logic that stays in the class
+        $this->database->delete($userId);
+        $this->logger->info('User deleted');
+    }
+}
+
+// AFTER transformation
+class UserService
+{
+    use ValidationTrait;
+    use FormattingTrait;
+    use CalculationTrait;
+
+    private $database;
+    private $logger;
+
+    public function saveUser(array $userData): void
+    {
+        // Main business logic that stays in the class
+        $this->database->save($userData);
+        $this->logger->info('User saved');
+    }
+
+    public function deleteUser(int $userId): void
+    {
+        // Main business logic that stays in the class
+        $this->database->delete($userId);
+        $this->logger->info('User deleted');
+    }
+}
+
+// Generated: src/Traits/ValidationTrait.php
+trait ValidationTrait
+{
+    public function validateEmail(string $email): bool
+    {
+        return filter_var($email, FILTER_VALIDATE_EMAIL) !== false;
+    }
+
+    public function validatePhone(string $phone): bool
+    {
+        return preg_match('/^\+?[1-9]\d{1,14}$/', $phone);
+    }
+
+    public function validateAge(int $age): bool
+    {
+        return $age >= 18 && $age <= 120;
+    }
+}
+
+// Generated: src/Traits/FormattingTrait.php
+trait FormattingTrait
+{
+    public function formatEmail(string $email): string
+    {
+        return strtolower(trim($email));
+    }
+
+    public function formatPhone(string $phone): string
+    {
+        return preg_replace('/[^\d+]/', '', $phone);
+    }
+
+    public function formatName(string $name): string
+    {
+        return ucwords(strtolower(trim($name)));
+    }
+}
+
+// Generated: src/Traits/CalculationTrait.php
+trait CalculationTrait
+{
+    public function calculateAge(string $birthDate): int
+    {
+        $birth = new DateTime($birthDate);
+        $now = new DateTime();
+        return $birth->diff($now)->y;
+    }
+
+    public function calculateTax(float $amount): float
+    {
+        return $amount * 0.21;
+    }
+}
+
+// =============================================================================
+// EXAMPLE 2: Using Annotations for Extraction
+// =============================================================================
+
+// BEFORE transformation
+class ProductService
+{
+    private $repository;
+
+    /**
+     * @extractable
+     * @group utility
+     */
+    public function generateSku(): string
+    {
+        return 'SKU-' . uniqid();
+    }
+
+    /**
+     * @extractable
+     * @group utility
+     */
+    public function generateBarcode(): string
+    {
+        return 'BC-' . random_int(100000, 999999);
+    }
+
+    /**
+     * @extractable
+     * @group conversion
+     */
+    public function convertPriceToDisplay(float $price): string
+    {
+        return ' . number_format($price, 2);
+    }
+
+    /**
+     * @extractable
+     * @group conversion
+     */
+    public function convertWeightToDisplay(float $weight): string
+    {
+        return $weight . ' kg';
+    }
+
+    // This method stays in the class (no @extractable annotation)
+    public function createProduct(array $data): Product
+    {
+        return $this->repository->create($data);
+    }
+}
+
+// AFTER transformation
+class ProductService
+{
+    use UtilityTrait;
+    use ConversionTrait;
+
+    private $repository;
+
+    public function createProduct(array $data): Product
+    {
+        return $this->repository->create($data);
+    }
+}
+
+// Generated: src/Traits/UtilityTrait.php
+trait UtilityTrait
+{
+    public function generateSku(): string
+    {
+        return 'SKU-' . uniqid();
+    }
+
+    public function generateBarcode(): string
+    {
+        return 'BC-' . random_int(100000, 999999);
+    }
+}
+
+// Generated: src/Traits/ConversionTrait.php
+trait ConversionTrait
+{
+    public function convertPriceToDisplay(float $price): string
+    {
+        return ' . number_format($price, 2);
+    }
+
+    public function convertWeightToDisplay(float $weight): string
+    {
+        return $weight . ' kg';
+    }
+}
+
+// =============================================================================
+// EXAMPLE 3: Using PHP 8 Attributes
+// =============================================================================
+
+// BEFORE transformation
+class OrderService
+{
+    private $cache;
+    private $logger;
+
+    #[Extractable(group: 'caching')]
+    public function getCachedTotal(int $orderId): ?float
+    {
+        return $this->cache->get("order_total_{$orderId}");
+    }
+
+    #[Extractable(group: 'caching')]
+    public function setCachedTotal(int $orderId, float $total): void
+    {
+        $this->cache->set("order_total_{$orderId}", $total, 3600);
+    }
+
+    #[Extractable(group: 'logging')]
+    public function logOrderCreated(int $orderId): void
+    {
+        $this->logger->info("Order {$orderId} created");
+    }
+
+    #[Extractable(group: 'logging')]
+    public function logOrderUpdated(int $orderId): void
+    {
+        $this->logger->info("Order {$orderId} updated");
+    }
+
+    // Core business logic stays
+    public function processOrder(array $orderData): Order
+    {
+        // Main business logic
+        return new Order($orderData);
+    }
+}
+
+// AFTER transformation
+class OrderService
+{
+    use CachingTrait;
+    use LoggingTrait;
+
+    private $cache;
+    private $logger;
+
+    public function processOrder(array $orderData): Order
+    {
+        // Main business logic
+        return new Order($orderData);
+    }
+}
+
+// Generated: src/Traits/CachingTrait.php
+trait CachingTrait
+{
+    public function getCachedTotal(int $orderId): ?float
+    {
+        return $this->cache->get("order_total_{$orderId}");
+    }
+
+    public function setCachedTotal(int $orderId, float $total): void
+    {
+        $this->cache->set("order_total_{$orderId}", $total, 3600);
+    }
+}
+
+// Generated: src/Traits/LoggingTrait.php
+trait LoggingTrait
+{
+    public function logOrderCreated(int $orderId): void
+    {
+        $this->logger->info("Order {$orderId} created");
+    }
+
+    public function logOrderUpdated(int $orderId): void
+    {
+        $this->logger->info("Order {$orderId} updated");
+    }
+}
+
+// =============================================================================
+// EXAMPLE 4: Complex Dependencies Handling
+// =============================================================================
+
+// BEFORE transformation
+class PaymentService
+{
+    private $gateway;
+    private $validator;
+    private const TAX_RATE = 0.21;
+    private const MAX_AMOUNT = 10000;
+
+    public function validateCard(string $cardNumber): bool
+    {
+        // Uses class property $validator
+        return $this->validator->validateCard($cardNumber);
+    }
+
+    public function validateAmount(float $amount): bool
+    {
+        // Uses class constant MAX_AMOUNT
+        return $amount > 0 && $amount <= self::MAX_AMOUNT;
+    }
+
+    public function calculateTotalWithTax(float $amount): float
+    {
+        // Uses class constant TAX_RATE
+        return $amount * (1 + self::TAX_RATE);
+    }
+
+    public function formatAmount(float $amount): string
+    {
+        // No dependencies - safe to extract
+        return number_format($amount, 2) . ' EUR';
+    }
+
+    public function processPayment(array $paymentData): PaymentResult
+    {
+        // Core business logic with dependencies
+        return $this->gateway->process($paymentData);
+    }
+}
+
+// AFTER transformation
+class PaymentService
+{
+    use ValidationTrait;
+    use CalculationTrait;
+    use FormattingTrait;
+
+    private $gateway;
+    private $validator;
+    private const TAX_RATE = 0.21;
+    private const MAX_AMOUNT = 10000;
+
+    public function processPayment(array $paymentData): PaymentResult
+    {
+        // Core business logic with dependencies
+        return $this->gateway->process($paymentData);
+    }
+}
+
+// Generated: src/Traits/ValidationTrait.php
+trait ValidationTrait
+{
+    // Required dependencies are included in the trait
+    private const MAX_AMOUNT = 10000;
+
+    public function validateCard(string $cardNumber): bool
+    {
+        // Uses class property $validator
+        return $this->validator->validateCard($cardNumber);
+    }
+
+    public function validateAmount(float $amount): bool
+    {
+        // Uses trait constant MAX_AMOUNT
+        return $amount > 0 && $amount <= self::MAX_AMOUNT;
+    }
+}
+
+// Generated: src/Traits/CalculationTrait.php
+trait CalculationTrait
+{
+    // Required dependencies are included in the trait
+    private const TAX_RATE = 0.21;
+
+    public function calculateTotalWithTax(float $amount): float
+    {
+        // Uses trait constant TAX_RATE
+        return $amount * (1 + self::TAX_RATE);
+    }
+}
+
+// Generated: src/Traits/FormattingTrait.php
+trait FormattingTrait
+{
+    public function formatAmount(float $amount): string
+    {
+        // No dependencies - safe to extract
+        return number_format($amount, 2) . ' EUR';
+    }
+}
+
+// =============================================================================
+// EXAMPLE 5: Advanced Configuration Usage
+// =============================================================================
+
+// Configuration for different extraction strategies
+$configurations = [
+    // Extract by method prefixes
+    'prefix_extraction' => [
+        'extract_patterns' => [
+            ['type' => 'prefix', 'value' => 'validate'],
+            ['type' => 'prefix', 'value' => 'format'],
+            ['type' => 'prefix', 'value' => 'parse'],
+            ['type' => 'prefix', 'value' => 'generate'],
+            ['type' => 'prefix', 'value' => 'convert'],
+        ],
+        'group_by' => 'prefix',
+        'min_methods_per_trait' => 2,
+    ],
+
+    // Extract by regex patterns
+    'regex_extraction' => [
+        'extract_patterns' => [
+            ['type' => 'regex', 'value' => '/^(get|set)[A-Z].*Display$/'],
+            ['type' => 'regex', 'value' => '/^(is|has)[A-Z].*Valid$/'],
+        ],
+        'group_by' => 'functionality',
+        'min_methods_per_trait' => 1,
+    ],
+
+    // Extract by custom annotations
+    'annotation_extraction' => [
+        'extract_patterns' => [
+            ['type' => 'annotation', 'value' => 'helper'],
+            ['type' => 'annotation', 'value' => 'utility'],
+            ['type' => 'annotation', 'value' => 'extractable'],
+        ],
+        'group_by' => 'annotation',
+        'min_methods_per_trait' => 1,
+    ],
+];
+
+// =============================================================================
+// COMMAND LINE USAGE EXAMPLES
+// =============================================================================
+
+/*
+# Basic usage - dry run to see what would be extracted
+vendor/bin/rector process --dry-run
+
+# Apply the transformation
+vendor/bin/rector process
+
+# Process only specific directory
+vendor/bin/rector process src/Services
+
+# With debug output
+vendor/bin/rector process --debug
+
+# Generate configuration
+vendor/bin/rector init
+
+# Custom configuration file
+vendor/bin/rector process --config=rector-traits.php
+*/
+
+// =============================================================================
+// COMPOSER.JSON SCRIPTS
+// =============================================================================
+
+/*
+{
+    "scripts": {
+        "rector-traits": "rector process --config=rector-traits.php",
+        "rector-traits-dry": "rector process --config=rector-traits.php --dry-run",
+        "rector-traits-debug": "rector process --config=rector-traits.php --debug"
+    }
+}
+*/
+
+// =============================================================================
+// PHPUNIT TESTS FOR THE RECTOR RULE
+// =============================================================================
+
+/*
+class PublicMethodsToTraitsRectorTest extends AbstractRectorTestCase
+{
+    public function testExtractValidationMethods(): void
+    {
+        $this->doTestFile(__DIR__ . '/Fixture/validation_methods.php.inc');
+    }
+
+    public function testExtractFormattingMethods(): void
+    {
+        $this->doTestFile(__DIR__ . '/Fixture/formatting_methods.php.inc');
+    }
+
+    public function testExtractWithAnnotations(): void
+    {
+        $this->doTestFile(__DIR__ . '/Fixture/annotation_extraction.php.inc');
+    }
+
+    public function testExtractWithAttributes(): void
+    {
+        $this->doTestFile(__DIR__ . '/Fixture/attribute_extraction.php.inc');
+    }
+
+    public function testHandleDependencies(): void
+    {
+        $this->doTestFile(__DIR__ . '/Fixture/with_dependencies.php.inc');
+    }
+
+    public function provideConfigFilePath(): string
+    {
+        return __DIR__ . '/config/rector-traits.php';
+    }
+}
+*/
+
+// =============================================================================
+// GENERATED TRAIT EXAMPLES WITH DIFFERENT GROUPING STRATEGIES
+// =============================================================================
+
+// Strategy: Group by prefix
+trait ValidateTrait
+{
+    public function validateEmail(string $email): bool
+    {
+        return filter_var($email, FILTER_VALIDATE_EMAIL) !== false;
+    }
+
+    public function validatePhone(string $phone): bool
+    {
+        return preg_match('/^\+?[1-9]\d{1,14}$/', $phone);
+    }
+}
+
+trait FormatTrait
+{
+    public function formatCurrency(float $amount): string
+    {
+        return ' . number_format($amount, 2);
+    }
+
+    public function formatDate(\DateTime $date): string
+    {
+        return $date->format('Y-m-d H:i:s');
+    }
+}
+
+// Strategy: Group by functionality
+trait DataProcessingTrait
+{
+    public function parseJson(string $json): array
+    {
+        return json_decode($json, true) ?? [];
+    }
+
+    public function convertArrayToXml(array $data): string
+    {
+        // Implementation here
+        return '<xml></xml>';
+    }
+
+    public function sanitizeInput(string $input): string
+    {
+        return htmlspecialchars(trim($input), ENT_QUOTES, 'UTF-8');
+    }
+}
+
+trait UtilityHelpersTrait
+{
+    public function generateUuid(): string
+    {
+        return sprintf(
+            '%04x%04x-%04x-%04x-%04x-%04x%04x%04x',
+            mt_rand(0, 0xffff), mt_rand(0, 0xffff),
+            mt_rand(0, 0xffff),
+            mt_rand(0, 0x0fff) | 0x4000,
+            mt_rand(0, 0x3fff) | 0x8000,
+            mt_rand(0, 0xffff), mt_rand(0, 0xffff), mt_rand(0, 0xffff)
+        );
+    }
+
+    public function slugify(string $text): string
+    {
+        return strtolower(trim(preg_replace('/[^A-Za-z0-9-]+/', '-', $text), '-'));
+    }
+}
