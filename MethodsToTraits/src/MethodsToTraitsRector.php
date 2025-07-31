@@ -4,13 +4,35 @@ declare(strict_types=1);
 
 namespace JDR\Rector\MethodsToTraits;
 
+use Exception;
 use PhpParser\Node;
+use PhpParser\Node\Expr\BinaryOp\LogicalAnd;
+use PhpParser\Node\Expr\BinaryOp\LogicalOr;
+use PhpParser\Node\Expr\ClassConstFetch;
+use PhpParser\Node\Expr\MethodCall;
+use PhpParser\Node\Expr\PropertyFetch;
+use PhpParser\Node\Expr\Ternary;
+use PhpParser\Node\Identifier;
+use PhpParser\Node\Name;
+use PhpParser\Node\Scalar\LNumber;
+use PhpParser\Node\Scalar\String_;
+use PhpParser\Node\Stmt\Case_;
+use PhpParser\Node\Stmt\Catch_;
 use PhpParser\Node\Stmt\Class_;
+use PhpParser\Node\Stmt\ClassConst;
 use PhpParser\Node\Stmt\ClassMethod;
+use PhpParser\Node\Stmt\Do_;
+use PhpParser\Node\Stmt\ElseIf_;
+use PhpParser\Node\Stmt\For_;
+use PhpParser\Node\Stmt\Foreach_;
+use PhpParser\Node\Stmt\If_;
+use PhpParser\Node\Stmt\Namespace_;
+use PhpParser\Node\Stmt\Property;
+use PhpParser\Node\Stmt\Switch_;
 use PhpParser\Node\Stmt\Trait_;
 use PhpParser\Node\Stmt\TraitUse;
-use PhpParser\Node\Name;
-use PhpParser\Node\Identifier;
+use PhpParser\Node\Stmt\While_;
+use PhpParser\PrettyPrinter\Standard;
 use Rector\Contract\Rector\ConfigurableRectorInterface;
 use Rector\Rector\AbstractRector;
 use Symplify\RuleDocGenerator\ValueObject\CodeSample\CodeSample;
@@ -62,7 +84,8 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
     {
         $this->config = array_merge($this->config, $configuration);
     }
-        private function traverseNodesOfType(Node $node, callable $callback): void
+
+    private function traverseNodesOfType(Node $node, callable $callback): void
     {
         $callback($node);
 
@@ -341,7 +364,7 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
             // Analyze method body for dependencies
             $this->traverseNodesOfType($method, function (Node $node) use (&$dependencies, $class) {
                 // Find property access
-                if ($node instanceof \PhpParser\Node\Expr\PropertyFetch) {
+                if ($node instanceof PropertyFetch) {
                     if ($this->isName($node->var, 'this')) {
                         $propertyName = $this->getName($node->name);
                         if ($propertyName && $this->hasProperty($class, $propertyName)) {
@@ -351,7 +374,7 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
                 }
 
                 // Find method calls
-                if ($node instanceof \PhpParser\Node\Expr\MethodCall) {
+                if ($node instanceof MethodCall) {
                     if ($this->isName($node->var, 'this')) {
                         $methodName = $this->getName($node->name);
                         if ($methodName && $this->hasMethod($class, $methodName)) {
@@ -361,7 +384,7 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
                 }
 
                 // Find constant access
-                if ($node instanceof \PhpParser\Node\Expr\ClassConstFetch) {
+                if ($node instanceof ClassConstFetch) {
                     if ($this->isName($node->class, 'self') || $this->isName($node->class, 'static')) {
                         $constantName = $this->getName($node->name);
                         if ($constantName && $this->hasConstant($class, $constantName)) {
@@ -375,7 +398,7 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
             foreach ($dependencies as &$depList) {
                 $depList = array_unique($depList);
             }
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             // If dependency analysis fails, continue without dependencies
         }
 
@@ -515,7 +538,7 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
 
         foreach ($methods as $methodInfo) {
             // Ensure we have a valid method
-            if (!isset($methodInfo['method']) || !($methodInfo['method'] instanceof \PhpParser\Node\Stmt\ClassMethod)) {
+            if (!isset($methodInfo['method']) || !($methodInfo['method'] instanceof ClassMethod)) {
                 continue;
             }
 
@@ -573,10 +596,10 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
     }
 
     // Helper methods to avoid duplicates
-    private function arrayContainsProperty(array $properties, \PhpParser\Node\Stmt\Property $property): bool
+    private function arrayContainsProperty(array $properties, Property $property): bool
     {
         foreach ($properties as $existingProperty) {
-            if ($existingProperty instanceof \PhpParser\Node\Stmt\Property) {
+            if ($existingProperty instanceof Property) {
                 foreach ($existingProperty->props as $prop) {
                     foreach ($property->props as $newProp) {
                         if ($prop->name->toString() === $newProp->name->toString()) {
@@ -589,10 +612,10 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
         return false;
     }
 
-    private function arrayContainsConstant(array $constants, \PhpParser\Node\Stmt\ClassConst $constant): bool
+    private function arrayContainsConstant(array $constants, ClassConst $constant): bool
     {
         foreach ($constants as $existingConstant) {
-            if ($existingConstant instanceof \PhpParser\Node\Stmt\ClassConst) {
+            if ($existingConstant instanceof ClassConst) {
                 foreach ($existingConstant->consts as $const) {
                     foreach ($constant->consts as $newConst) {
                         if ($const->name->toString() === $newConst->name->toString()) {
@@ -617,9 +640,9 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
         // Collect all moved dependencies from traits
         foreach ($generatedTraits as $trait) {
             foreach ($trait['node']->stmts as $stmt) {
-                if ($stmt instanceof \PhpParser\Node\Stmt\ClassMethod) {
+                if ($stmt instanceof ClassMethod) {
                     $movedMethods[] = $stmt->name->toString();
-                } elseif ($stmt instanceof \PhpParser\Node\Stmt\Property) {
+                } elseif ($stmt instanceof Property) {
                     foreach ($stmt->props as $prop) {
                         $movedProperties[] = $prop->name->toString();
                     }
@@ -630,12 +653,12 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
         // Remove extracted methods AND moved dependency methods
         $modifiedClass->stmts = array_filter($modifiedClass->stmts, function ($stmt) use ($movedMethods, $movedProperties) {
             // Remove methods that were moved to traits
-            if ($stmt instanceof \PhpParser\Node\Stmt\ClassMethod) {
+            if ($stmt instanceof ClassMethod) {
                 return !in_array($stmt->name->toString(), $movedMethods, true);
             }
 
             // Remove properties that were moved to traits
-            if ($stmt instanceof \PhpParser\Node\Stmt\Property) {
+            if ($stmt instanceof Property) {
                 $stmt->props = array_filter($stmt->props, function ($prop) use ($movedProperties) {
                     return !in_array($prop->name->toString(), $movedProperties, true);
                 });
@@ -692,7 +715,7 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
 
         // Add namespace if provided
         if (!empty($namespaceParts)) {
-            $statements[] = new \PhpParser\Node\Stmt\Namespace_(
+            $statements[] = new Namespace_(
                 new Name($namespaceParts),
                 [$traitNode]
             );
@@ -702,7 +725,7 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
         }
 
         // Use the standard pretty printer with proper formatting
-        $printer = new \PhpParser\PrettyPrinter\Standard([
+        $printer = new Standard([
             'shortArraySyntax' => true,
         ]);
 
@@ -712,7 +735,7 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
         try {
             $generatedCode = $printer->prettyPrint($statements);
             $content .= $generatedCode;
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             // Fallback: create a simple trait manually
             $content .= $this->createFallbackTraitContent($traitName, $traitNode, $namespace);
         }
@@ -734,7 +757,7 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
 
         // Add methods manually
         foreach ($traitNode->stmts as $stmt) {
-            if ($stmt instanceof \PhpParser\Node\Stmt\ClassMethod) {
+            if ($stmt instanceof ClassMethod) {
                 $methodName = $stmt->name->toString();
                 $content .= "    public function $methodName()\n    {\n";
                 $content .= "        // TODO: Implement method body\n";
@@ -756,7 +779,7 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
     private function hasProperty(Class_ $class, string $propertyName): bool
     {
         foreach ($class->stmts as $stmt) {
-            if ($stmt instanceof \PhpParser\Node\Stmt\Property) {
+            if ($stmt instanceof Property) {
                 foreach ($stmt->props as $prop) {
                     if ($this->isName($prop->name, $propertyName)) {
                         return true;
@@ -780,7 +803,7 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
     private function hasConstant(Class_ $class, string $constantName): bool
     {
         foreach ($class->stmts as $stmt) {
-            if ($stmt instanceof \PhpParser\Node\Stmt\ClassConst) {
+            if ($stmt instanceof ClassConst) {
                 foreach ($stmt->consts as $const) {
                     if ($this->isName($const->name, $constantName)) {
                         return true;
@@ -791,10 +814,10 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
         return false;
     }
 
-    private function getProperty(Class_ $class, string $propertyName): ?\PhpParser\Node\Stmt\Property
+    private function getProperty(Class_ $class, string $propertyName): ?Property
     {
         foreach ($class->stmts as $stmt) {
-            if ($stmt instanceof \PhpParser\Node\Stmt\Property) {
+            if ($stmt instanceof Property) {
                 foreach ($stmt->props as $prop) {
                     if ($this->isName($prop->name, $propertyName)) {
                         return clone $stmt;
@@ -805,10 +828,10 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
         return null;
     }
 
-    private function getConstant(Class_ $class, string $constantName): ?\PhpParser\Node\Stmt\ClassConst
+    private function getConstant(Class_ $class, string $constantName): ?ClassConst
     {
         foreach ($class->stmts as $stmt) {
-            if ($stmt instanceof \PhpParser\Node\Stmt\ClassConst) {
+            if ($stmt instanceof ClassConst) {
                 foreach ($stmt->consts as $const) {
                     if ($this->isName($const->name, $constantName)) {
                         return clone $stmt;
@@ -862,7 +885,7 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
             foreach ($attrGroup->attrs as $attr) {
                 if ($this->isName($attr->name, $attributeName) && !empty($attr->args)) {
                     $firstArg = $attr->args[0]->value;
-                    if ($firstArg instanceof \PhpParser\Node\Scalar\String_) {
+                    if ($firstArg instanceof String_) {
                         return $firstArg->value;
                     }
                 }
@@ -877,18 +900,18 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
 
         $this->traverseNodesOfType($method, function (Node $node) use (&$complexity) {
             // Increase complexity for control structures
-            if ($node instanceof \PhpParser\Node\Stmt\If_ ||
-                $node instanceof \PhpParser\Node\Stmt\ElseIf_ ||
-                $node instanceof \PhpParser\Node\Stmt\For_ ||
-                $node instanceof \PhpParser\Node\Stmt\Foreach_ ||
-                $node instanceof \PhpParser\Node\Stmt\While_ ||
-                $node instanceof \PhpParser\Node\Stmt\Do_ ||
-                $node instanceof \PhpParser\Node\Stmt\Switch_ ||
-                $node instanceof \PhpParser\Node\Stmt\Case_ ||
-                $node instanceof \PhpParser\Node\Stmt\Catch_ ||
-                $node instanceof \PhpParser\Node\Expr\Ternary ||
-                $node instanceof \PhpParser\Node\Expr\BinaryOp\LogicalAnd ||
-                $node instanceof \PhpParser\Node\Expr\BinaryOp\LogicalOr) {
+            if ($node instanceof If_ ||
+                $node instanceof ElseIf_ ||
+                $node instanceof For_ ||
+                $node instanceof Foreach_ ||
+                $node instanceof While_ ||
+                $node instanceof Do_ ||
+                $node instanceof Switch_ ||
+                $node instanceof Case_ ||
+                $node instanceof Catch_ ||
+                $node instanceof Ternary ||
+                $node instanceof LogicalAnd ||
+                $node instanceof LogicalOr) {
                 $complexity++;
             }
         });
@@ -923,9 +946,9 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
                 $args = [];
 
                 foreach ($attr->args as $arg) {
-                    if ($arg->value instanceof \PhpParser\Node\Scalar\String_) {
+                    if ($arg->value instanceof String_) {
                         $args[] = $arg->value->value;
-                    } elseif ($arg->value instanceof \PhpParser\Node\Scalar\LNumber) {
+                    } elseif ($arg->value instanceof LNumber) {
                         $args[] = $arg->value->value;
                     }
                 }
@@ -971,7 +994,7 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
         }
 
         foreach ($class->stmts as $stmt) {
-            if ($stmt instanceof \PhpParser\Node\Stmt\Property) {
+            if ($stmt instanceof Property) {
                 foreach ($stmt->props as $prop) {
                     $propertyName = $prop->name->toString();
                     $this->propertyUsageMap[$propertyName] = [
@@ -999,7 +1022,7 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
         try {
             $this->traverseNodesOfType($method, function (Node $node) use ($callerMethodName) {
                 // Track method calls
-                if ($node instanceof \PhpParser\Node\Expr\MethodCall) {
+                if ($node instanceof MethodCall) {
                     if ($this->isName($node->var, 'this')) {
                         $calledMethodName = $this->getName($node->name);
                         if ($calledMethodName && isset($this->methodUsageMap[$calledMethodName])) {
@@ -1009,7 +1032,7 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
                 }
 
                 // Track property access
-                if ($node instanceof \PhpParser\Node\Expr\PropertyFetch) {
+                if ($node instanceof PropertyFetch) {
                     if ($this->isName($node->var, 'this')) {
                         $propertyName = $this->getName($node->name);
                         if ($propertyName && isset($this->propertyUsageMap[$propertyName])) {
@@ -1018,7 +1041,7 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
                     }
                 }
             });
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             // Continue if analysis fails
         }
     }
@@ -1095,7 +1118,7 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
     /**
      * NEW: Get a method by name from class
      */
-    private function getMethod(Class_ $class, string $methodName): ?\PhpParser\Node\Stmt\ClassMethod
+    private function getMethod(Class_ $class, string $methodName): ?ClassMethod
     {
         foreach ($class->getMethods() as $method) {
             if ($this->isName($method->name, $methodName)) {
@@ -1108,11 +1131,11 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
     /**
      * NEW: Check if method array already contains a specific method
      */
-    private function arrayContainsMethod(array $methods, \PhpParser\Node\Stmt\ClassMethod $targetMethod): bool
+    private function arrayContainsMethod(array $methods, ClassMethod $targetMethod): bool
     {
         $targetName = $targetMethod->name->toString();
         foreach ($methods as $method) {
-            if ($method instanceof \PhpParser\Node\Stmt\ClassMethod &&
+            if ($method instanceof ClassMethod &&
                 $method->name->toString() === $targetName) {
                 return true;
             }
