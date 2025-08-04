@@ -197,33 +197,33 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
         }
 
         // Skip if class is abstract, interface, or trait
-        if ($node->isAbstract() || $this->isInterface($node) || $this->isTrait($node)) {
+        if ($node->isAbstract() || $this->isInterface() || $this->isTrait()) {
             return null;
         }
 
         // Analyze methods in the class
         $methodsToExtract = $this->analyzeClassMethods($node);
 
-        if (empty($methodsToExtract)) {
+        if ($methodsToExtract === []) {
             return null;
         }
 
         // Group methods by extraction strategy
         $groupedMethods = $this->groupMethodsForExtraction($methodsToExtract);
 
-        if (empty($groupedMethods)) {
+        if ($groupedMethods === []) {
             return null;
         }
 
         // Extract methods to traits
         $traitsGenerated = $this->extractMethodsToTraits($groupedMethods, $node);
 
-        if (empty($traitsGenerated)) {
+        if ($traitsGenerated === []) {
             return null;
         }
 
         // Modify the original class
-        return $this->modifyOriginalClass($node, $methodsToExtract, $traitsGenerated);
+        return $this->modifyOriginalClass($node, $traitsGenerated);
     }
 
     private function analyzeClassMethods(Class_ $class): array
@@ -300,13 +300,13 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
         foreach ($this->config['extract_patterns'] as $pattern) {
             switch ($pattern['type']) {
                 case 'prefix':
-                    if (str_starts_with($methodName, $pattern['value'])) {
+                    if (strncmp($methodName, $pattern['value'], strlen($pattern['value'])) === 0) {
                         return true;
                     }
                     break;
 
                 case 'suffix':
-                    if (str_ends_with($methodName, $pattern['value'])) {
+                    if (substr_compare($methodName, $pattern['value'], -strlen($pattern['value'])) === 0) {
                         return true;
                     }
                     break;
@@ -338,7 +338,7 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
     {
         $methodName = $method->name->toString();
 
-        $methodInfo = [
+        return [
             'method' => $method,
             'name' => $methodName,
             'extractable' => true,
@@ -348,8 +348,6 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
             'annotations' => $this->extractMethodAnnotations($method),
             'attributes' => $this->extractMethodAttributes($method)
         ];
-
-        return $methodInfo;
     }
 
     private function findMethodDependencies(ClassMethod $method, Class_ $class): array
@@ -362,34 +360,28 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
 
         try {
             // Analyze method body for dependencies
-            $this->traverseNodesOfType($method, function (Node $node) use (&$dependencies, $class) {
+            $this->traverseNodesOfType($method, function (Node $node) use (&$dependencies, $class): void {
                 // Find property access
-                if ($node instanceof PropertyFetch) {
-                    if ($this->isName($node->var, 'this')) {
-                        $propertyName = $this->getName($node->name);
-                        if ($propertyName && $this->hasProperty($class, $propertyName)) {
-                            $dependencies['properties'][] = $propertyName;
-                        }
+                if ($node instanceof PropertyFetch && $this->isName($node->var, 'this')) {
+                    $propertyName = $this->getName($node->name);
+                    if ($propertyName && $this->hasProperty($class, $propertyName)) {
+                        $dependencies['properties'][] = $propertyName;
                     }
                 }
 
                 // Find method calls
-                if ($node instanceof MethodCall) {
-                    if ($this->isName($node->var, 'this')) {
-                        $methodName = $this->getName($node->name);
-                        if ($methodName && $this->hasMethod($class, $methodName)) {
-                            $dependencies['methods'][] = $methodName;
-                        }
+                if ($node instanceof MethodCall && $this->isName($node->var, 'this')) {
+                    $methodName = $this->getName($node->name);
+                    if ($methodName && $this->hasMethod($class, $methodName)) {
+                        $dependencies['methods'][] = $methodName;
                     }
                 }
 
                 // Find constant access
-                if ($node instanceof ClassConstFetch) {
-                    if ($this->isName($node->class, 'self') || $this->isName($node->class, 'static')) {
-                        $constantName = $this->getName($node->name);
-                        if ($constantName && $this->hasConstant($class, $constantName)) {
-                            $dependencies['constants'][] = $constantName;
-                        }
+                if ($node instanceof ClassConstFetch && ($this->isName($node->class, 'self') || $this->isName($node->class, 'static'))) {
+                    $constantName = $this->getName($node->name);
+                    if ($constantName && $this->hasConstant($class, $constantName)) {
+                        $dependencies['constants'][] = $constantName;
                     }
                 }
             });
@@ -413,7 +405,7 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
         if ($this->config['use_direct_mapping'] && isset($this->config['method_to_trait_map'][$methodName])) {
             $traitName = $this->config['method_to_trait_map'][$methodName];
             // Remove 'Trait' suffix if present to avoid 'TraitTrait'
-            return str_ends_with($traitName, 'Trait') ? substr($traitName, 0, -5) : $traitName;
+            return substr_compare($traitName, 'Trait', -strlen('Trait')) === 0 ? substr($traitName, 0, -5) : $traitName;
         }
 
         switch ($this->config['group_by']) {
@@ -421,7 +413,7 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
                 // Group by common prefixes (validate, format, calculate, etc.)
                 $commonPrefixes = ['validate', 'format', 'calculate', 'convert', 'transform', 'parse', 'generate'];
                 foreach ($commonPrefixes as $prefix) {
-                    if (str_starts_with($methodName, $prefix)) {
+                    if (strncmp($methodName, $prefix, strlen($prefix)) === 0) {
                         return ucfirst($prefix);
                     }
                 }
@@ -465,7 +457,7 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
 
         foreach ($patterns as $group => $keywords) {
             foreach ($keywords as $keyword) {
-                if (str_contains(strtolower($methodName), $keyword)) {
+                if (strpos(strtolower($methodName), $keyword) !== false) {
                     return $group;
                 }
             }
@@ -489,7 +481,7 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
         }
 
         // Filter groups that have minimum required methods
-        return array_filter($groups, function ($group) {
+        return array_filter($groups, function ($group): bool {
             return count($group) >= $this->config['min_methods_per_trait'];
         });
     }
@@ -538,10 +530,12 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
 
         foreach ($methods as $methodInfo) {
             // Ensure we have a valid method
-            if (!isset($methodInfo['method']) || !($methodInfo['method'] instanceof ClassMethod)) {
+            if (!isset($methodInfo['method'])) {
                 continue;
             }
-
+            if (!($methodInfo['method'] instanceof ClassMethod)) {
+                continue;
+            }
             // Clone the method and add to trait methods
             $method = clone $methodInfo['method'];
             $traitMethods[] = $method;
@@ -550,11 +544,9 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
             if (isset($methodInfo['dependencies']['properties']) && !empty($methodInfo['dependencies']['properties'])) {
                 foreach ($methodInfo['dependencies']['properties'] as $propertyName) {
                     $property = $this->getProperty($originalClass, $propertyName);
-                    if ($property && !$this->arrayContainsProperty($requiredProperties, $property)) {
-                        // NEW: Check if property should be moved to trait
-                        if ($this->shouldMovePropertyToTrait($propertyName, $extractedMethodNames)) {
-                            $requiredProperties[] = clone $property;
-                        }
+                    // NEW: Check if property should be moved to trait
+                    if ($property && !$this->arrayContainsProperty($requiredProperties, $property) && $this->shouldMovePropertyToTrait($propertyName, $extractedMethodNames)) {
+                        $requiredProperties[] = clone $property;
                     }
                 }
             }
@@ -571,7 +563,7 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
             // NEW: Check for internal method dependencies and move them if appropriate
             if (isset($methodInfo['dependencies']['methods']) && !empty($methodInfo['dependencies']['methods'])) {
                 foreach ($methodInfo['dependencies']['methods'] as $dependentMethodName) {
-                    if ($this->shouldMoveMethodToTrait($dependentMethodName, $extractedMethodNames, $originalClass)) {
+                    if ($this->shouldMoveMethodToTrait($dependentMethodName, $extractedMethodNames)) {
                         $dependentMethod = $this->getMethod($originalClass, $dependentMethodName);
                         if ($dependentMethod && !$this->arrayContainsMethod($traitMethods, $dependentMethod)) {
                             $traitMethods[] = clone $dependentMethod;
@@ -628,12 +620,9 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
         return false;
     }
 
-    private function modifyOriginalClass(Class_ $class, array $extractedMethods, array $generatedTraits): Class_
+    private function modifyOriginalClass(Class_ $class, array $generatedTraits): Class_
     {
         $modifiedClass = clone $class;
-
-        // Get all methods and properties that were moved to traits
-        $extractedMethodNames = array_column($extractedMethods, 'name');
         $movedMethods = [];
         $movedProperties = [];
 
@@ -651,7 +640,7 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
         }
 
         // Remove extracted methods AND moved dependency methods
-        $modifiedClass->stmts = array_filter($modifiedClass->stmts, function ($stmt) use ($movedMethods, $movedProperties) {
+        $modifiedClass->stmts = array_filter($modifiedClass->stmts, function ($stmt) use ($movedMethods, $movedProperties): bool {
             // Remove methods that were moved to traits
             if ($stmt instanceof ClassMethod) {
                 return !in_array($stmt->name->toString(), $movedMethods, true);
@@ -659,11 +648,11 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
 
             // Remove properties that were moved to traits
             if ($stmt instanceof Property) {
-                $stmt->props = array_filter($stmt->props, function ($prop) use ($movedProperties) {
+                $stmt->props = array_filter($stmt->props, function ($prop) use ($movedProperties): bool {
                     return !in_array($prop->name->toString(), $movedProperties, true);
                 });
                 // Remove the property statement if no properties left
-                return !empty($stmt->props);
+                return $stmt->props !== [];
             }
 
             return true;
@@ -714,7 +703,7 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
         $statements = [];
 
         // Add namespace if provided
-        if (!empty($namespaceParts)) {
+        if ($namespaceParts !== []) {
             $statements[] = new Namespace_(
                 new Name($namespaceParts),
                 [$traitNode]
@@ -748,7 +737,7 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
         $content = "";
 
         // Add namespace if provided
-        if (!empty(trim($namespace, '\\'))) {
+        if (!in_array(trim($namespace, '\\'), ['', '0'], true)) {
             $content .= "namespace " . trim($namespace, '\\') . ";\n\n";
         }
 
@@ -849,7 +838,7 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
             return false;
         }
 
-        return str_contains($docComment->getText(), "@{$annotation}");
+        return strpos($docComment->getText(), "@{$annotation}") !== false;
     }
 
     private function hasAttribute(ClassMethod $method, string $attributeName): bool
@@ -883,7 +872,7 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
     {
         foreach ($method->attrGroups as $attrGroup) {
             foreach ($attrGroup->attrs as $attr) {
-                if ($this->isName($attr->name, $attributeName) && !empty($attr->args)) {
+                if ($this->isName($attr->name, $attributeName) && $attr->args !== []) {
                     $firstArg = $attr->args[0]->value;
                     if ($firstArg instanceof String_) {
                         return $firstArg->value;
@@ -898,7 +887,7 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
     {
         $complexity = 1; // Base complexity
 
-        $this->traverseNodesOfType($method, function (Node $node) use (&$complexity) {
+        $this->traverseNodesOfType($method, function (Node $node) use (&$complexity): void {
             // Increase complexity for control structures
             if ($node instanceof If_ ||
                 $node instanceof ElseIf_ ||
@@ -960,14 +949,14 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
         return $attributes;
     }
 
-    private function isInterface(Class_ $class): bool
+    private function isInterface(): bool
     {
         // This is a simplification - in real implementation,
         // you'd check if the node is actually an Interface_ node
         return false;
     }
 
-    private function isTrait(Class_ $class): bool
+    private function isTrait(): bool
     {
         // This is a simplification - in real implementation,
         // you'd check if the node is actually a Trait_ node
@@ -1020,24 +1009,20 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
     private function analyzeMethodUsage(ClassMethod $method, string $callerMethodName): void
     {
         try {
-            $this->traverseNodesOfType($method, function (Node $node) use ($callerMethodName) {
+            $this->traverseNodesOfType($method, function (Node $node) use ($callerMethodName): void {
                 // Track method calls
-                if ($node instanceof MethodCall) {
-                    if ($this->isName($node->var, 'this')) {
-                        $calledMethodName = $this->getName($node->name);
-                        if ($calledMethodName && isset($this->methodUsageMap[$calledMethodName])) {
-                            $this->methodUsageMap[$calledMethodName]['usedBy'][] = $callerMethodName;
-                        }
+                if ($node instanceof MethodCall && $this->isName($node->var, 'this')) {
+                    $calledMethodName = $this->getName($node->name);
+                    if ($calledMethodName && isset($this->methodUsageMap[$calledMethodName])) {
+                        $this->methodUsageMap[$calledMethodName]['usedBy'][] = $callerMethodName;
                     }
                 }
 
                 // Track property access
-                if ($node instanceof PropertyFetch) {
-                    if ($this->isName($node->var, 'this')) {
-                        $propertyName = $this->getName($node->name);
-                        if ($propertyName && isset($this->propertyUsageMap[$propertyName])) {
-                            $this->propertyUsageMap[$propertyName]['usedBy'][] = $callerMethodName;
-                        }
+                if ($node instanceof PropertyFetch && $this->isName($node->var, 'this')) {
+                    $propertyName = $this->getName($node->name);
+                    if ($propertyName && isset($this->propertyUsageMap[$propertyName])) {
+                        $this->propertyUsageMap[$propertyName]['usedBy'][] = $callerMethodName;
                     }
                 }
             });
@@ -1049,38 +1034,31 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
     /**
      * NEW: Determine if a method should be moved to the trait
      */
-    private function shouldMoveMethodToTrait(string $methodName, array $extractedMethodNames, Class_ $originalClass): bool
+    private function shouldMoveMethodToTrait(string $methodName, array $extractedMethodNames): bool
     {
         if (!$this->config['auto_move_dependencies']) {
             return false;
         }
-
         // Don't move if method doesn't exist in usage map
         if (!isset($this->methodUsageMap[$methodName])) {
             return false;
         }
-
         $usage = $this->methodUsageMap[$methodName];
-
         // Check if method visibility is in allowed scopes
         $allowedScopes = $this->config['move_method_scopes'] ?? ['private'];
         $methodScope = $usage['isPrivate'] ? 'private' : ($usage['isProtected'] ? 'protected' : 'public');
-
         if (!in_array($methodScope, $allowedScopes, true)) {
             return false;
         }
-
         // Don't move if it's in the excluded methods list
         if (in_array($methodName, $this->config['exclude_methods'], true)) {
             return false;
         }
-
         // Check if method is ONLY used by methods being extracted
         $usedBy = array_unique($usage['usedBy']);
         $usedByExtracted = array_intersect($usedBy, $extractedMethodNames);
-
         // Move if ALL usages are from extracted methods
-        return count($usedBy) > 0 && count($usedBy) === count($usedByExtracted);
+        return $usedBy !== [] && count($usedBy) === count($usedByExtracted);
     }
 
     /**
@@ -1112,7 +1090,7 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
         $usedByExtracted = array_intersect($usedBy, $extractedMethodNames);
 
         // Move if ALL usages are from extracted methods
-        return count($usedBy) > 0 && count($usedBy) === count($usedByExtracted);
+        return $usedBy !== [] && count($usedBy) === count($usedByExtracted);
     }
 
     /**
