@@ -8,7 +8,7 @@
  * Usage: php UsageScanner.php --search="ClassName,AnotherClass::method" --path="/path/to/scan" [OPTIONS]
  */
 
-error_reporting(E_ALL & ~E_DEPRECATED & ~E_STRICT & ~E_NOTICE); ;
+error_reporting(E_ALL & ~E_DEPRECATED);
 
 require_once 'vendor/autoload.php';
 

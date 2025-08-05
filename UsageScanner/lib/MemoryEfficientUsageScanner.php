@@ -56,34 +56,26 @@ class MemoryEfficientUsageScanner extends NodeVisitorAbstract
         if ($node instanceof Node\Stmt\Namespace_) {
             $namespace = $node->name ? $node->name->toString() : null;
             $this->typeInference->setCurrentNamespace($namespace);
-        }
-
-        // Handle use statements
+        } // Handle use statements
         elseif ($node instanceof Node\Stmt\Use_) {
             foreach ($node->uses as $useUse) {
                 $alias = $useUse->getAlias() ? $useUse->getAlias()->toString() : $useUse->name->getLast();
                 $fullName = $useUse->name->toString();
                 $this->typeInference->addUseStatement($alias, $fullName);
             }
-        }
-
-        // Handle class declarations
+        } // Handle class declarations
         elseif ($node instanceof Node\Stmt\Class_) {
-            $className = $node->name->toString();
-            $this->typeInference->setCurrentClass($className);
-        }
-
-        // Handle class properties
+            if ($node->name !== null) {
+                $className = $node->name->toString();
+                $this->typeInference->setCurrentClass($className);
+            }
+        } // Handle class properties
         elseif ($node instanceof Node\Stmt\Property) {
             $this->handlePropertyDeclaration($node);
-        }
-
-        // Handle variable assignments for type inference
+        } // Handle variable assignments for type inference
         elseif ($node instanceof Node\Expr\Assign) {
             $this->handleAssignment($node);
-        }
-
-        // Check for new ClassName() usage
+        } // Check for new ClassName() usage
         elseif ($node instanceof Node\Expr\New_ && $node->class instanceof Node\Name) {
             $className = $node->class->toString();
             $resolvedClass = $this->typeInference->resolveType($className);
@@ -93,14 +85,10 @@ class MemoryEfficientUsageScanner extends NodeVisitorAbstract
                 $targetName = isset($this->searchTargets['classes'][$className]) ? $className : $resolvedClass;
                 $this->recordUsage($targetName, 'new', $node->getLine());
             }
-        }
-
-        // Check for $obj->method() usage (with type inference)
+        } // Check for $obj->method() usage (with type inference)
         elseif ($node instanceof Node\Expr\MethodCall && $node->name instanceof Node\Identifier) {
             $this->handleInstanceMethodCall($node);
-        }
-
-        // Check for ClassName::method() static calls
+        } // Check for ClassName::method() static calls
         elseif ($node instanceof Node\Expr\StaticCall) {
             if ($node->class instanceof Node\Name && $node->name instanceof Node\Identifier) {
                 $className = $node->class->toString();
@@ -116,9 +104,7 @@ class MemoryEfficientUsageScanner extends NodeVisitorAbstract
                     $this->recordUsage($targetName, 'static_call', $node->getLine());
                 }
             }
-        }
-
-        // Check for class name usage in type hints, instanceof, etc.
+        } // Check for class name usage in type hints, instanceof, etc.
         elseif ($node instanceof Node\Name) {
             $className = $node->toString();
             $resolvedClass = $this->typeInference->resolveType($className);
@@ -193,7 +179,7 @@ class MemoryEfficientUsageScanner extends NodeVisitorAbstract
                 $node->var->name instanceof Node\Identifier) {
 
                 $propertyName = $node->var->name->toString();
-                $inferredType = $this->typeInference->getPropertyType($propertyName);
+
             }
         } elseif ($node->var instanceof Node\Expr\Variable && is_string($node->var->name)) {
             // $variable->method() case

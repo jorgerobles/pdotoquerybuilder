@@ -1,7 +1,5 @@
 <?php
 
-use PhpParser\Node;
-
 class TypeInferenceEngine
 {
     private array $useStatements = [];
@@ -9,6 +7,39 @@ class TypeInferenceEngine
     private array $variableTypes = [];
     private ?string $currentClass = null;
     private ?string $currentNamespace = null;
+
+    private bool $allowShortNameMatching = false;
+
+    public function __construct(bool $allowShortNameMatching = false)
+    {
+        $this->allowShortNameMatching = $allowShortNameMatching;
+    }
+
+    private function typesMatch(string $inferredType, string $targetType): bool
+    {
+        // Normalize both types
+        $inferredType = ltrim($inferredType, '\\');
+        $targetType = ltrim($targetType, '\\');
+
+        // Direct match (always preferred)
+        if ($inferredType === $targetType) {
+            return true;
+        }
+
+        // Only do short name matching if explicitly enabled
+        if ($this->allowShortNameMatching) {
+            $inferredParts = explode('\\', $inferredType);
+            $targetParts = explode('\\', $targetType);
+            return end($inferredParts) === end($targetParts);
+        }
+
+        return false;
+    }
+
+    public function matchesTargetClass(string $inferredType, string $targetClass): bool
+    {
+        return $this->typesMatch($inferredType, $targetClass);
+    }
 
     public function reset(): void
     {
@@ -109,28 +140,6 @@ class TypeInferenceEngine
         return $type;
     }
 
-    private function typesMatch(string $inferredType, string $targetType): bool
-    {
-        // Normalize both types
-        $inferredType = ltrim($inferredType, '\\');
-        $targetType = ltrim($targetType, '\\');
-
-        // Direct match
-        if ($inferredType === $targetType) {
-            return true;
-        }
-
-        // Check if they match when considering just the class name
-        $inferredParts = explode('\\', $inferredType);
-        $targetParts = explode('\\', $targetType);
-
-        return end($inferredParts) === end($targetParts);
-    }
-
-    public function matchesTargetClass(string $inferredType, string $targetClass): bool
-    {
-        return $this->typesMatch($inferredType, $targetClass);
-    }
 
     public function getUseStatements(): array
     {
