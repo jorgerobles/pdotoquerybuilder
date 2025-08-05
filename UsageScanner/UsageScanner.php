@@ -25,6 +25,7 @@ function parseArguments(): array
     $options = getopt('', [
         'search:', 'path:', 'exclude:', 'cache-dir:',
         'no-cache', 'clear-cache', 'stdin', 'csv:', 'csv-summary:',
+        'memory-report:', // NEW: Export memory analysis to CSV
         'help', 'h'
     ]);
 
@@ -59,7 +60,37 @@ function parseArguments(): array
     $csvFile = validateCsvPath($options['csv'] ?? null, 'csv');
     $csvSummaryFile = validateCsvPath($options['csv-summary'] ?? null, 'csv-summary');
 
-    return [$searchTargets, $scanPath, $excludePaths, $cacheDir, $cacheEnabled, $csvFile, $csvSummaryFile];
+    // Validate memory report path
+    $memoryReportFile = validateCsvPath($options['memory-report'] ?? null, 'memory-report');
+
+    return [$searchTargets, $scanPath, $excludePaths, $cacheDir, $cacheEnabled,
+        $csvFile, $csvSummaryFile, $memoryReportFile];
+}
+
+function displayUsage(): void
+{
+    echo "PHP Usage Scanner - Find method and class usage in PHP codebases\n\n";
+
+    echo "Usage: php UsageScanner.php [OPTIONS]\n\n";
+
+    // ... existing usage sections ...
+
+    echo "Output Options:\n";
+    echo "  --csv=\"results.csv\"               Export detailed results to CSV\n";
+    echo "  --csv-summary=\"summary.csv\"       Export summary results to CSV\n";
+    echo "  --memory-report=\"memory.csv\"      Export memory analysis to CSV\n\n";
+
+    // ... rest of existing usage text ...
+
+    echo "Memory Analysis Examples:\n";
+    echo "  # Track memory usage and get detailed report\n";
+    echo "  php UsageScanner.php --search=\"User\" --memory-report=\"memory-analysis.csv\"\n\n";
+
+    echo "  # Find files causing memory issues\n";
+    echo "  php UsageScanner.php --search=\"User\" --path=\"/large/codebase\" --memory-report=\"memory-hogs.csv\"\n\n";
+
+    echo "  # Complete analysis with all reports\n";
+    echo "  php UsageScanner.php --search=\"User\" --csv=\"results.csv\" --csv-summary=\"summary.csv\" --memory-report=\"memory.csv\"\n\n";
 }
 
 function validateAndGetSearchTargets(array $options): array
@@ -382,68 +413,12 @@ function displayUsageHint(): void
     echo "  echo \"User\" | php UsageScanner.php --stdin\n";
 }
 
-function displayUsage(): void
-{
-    echo "PHP Usage Scanner - Find method and class usage in PHP codebases\n\n";
 
-    echo "Usage: php UsageScanner.php [OPTIONS]\n\n";
-
-    echo "Required (one of):\n";
-    echo "  --search=\"Class1,Class2::method\"  Search targets (comma-separated)\n";
-    echo "  --stdin                           Read search targets from stdin\n\n";
-
-    echo "Search Target Format:\n";
-    echo "  ClassName                         Find class usage (new, instanceof, type hints)\n";
-    echo "  ClassName::methodName             Find method usage (calls, static calls)\n";
-    echo "  Multiple targets                  Separate with commas or newlines\n\n";
-
-    echo "Scan Options:\n";
-    echo "  --path=\"/path/to/scan\"             Directory to scan (default: current directory)\n";
-    echo "  --exclude=\"vendor,tests\"          Paths to exclude (comma-separated patterns)\n\n";
-
-    echo "Output Options:\n";
-    echo "  --csv=\"results.csv\"               Export detailed results to CSV\n";
-    echo "  --csv-summary=\"summary.csv\"       Export summary results to CSV\n\n";
-
-    echo "Cache Options:\n";
-    echo "  --cache-dir=\"/tmp/cache\"           Cache directory (default: system temp)\n";
-    echo "  --no-cache                        Disable caching\n";
-    echo "  --clear-cache                     Clear all cached results and exit\n\n";
-
-    echo "Help:\n";
-    echo "  --help, -h                        Show this help message\n\n";
-
-    echo "Examples:\n";
-    echo "  # Basic usage with type-aware detection\n";
-    echo "  php UsageScanner.php --search=\"indexModel::getBuildingData\" --path=\"/app\"\n\n";
-
-    echo "  # Multiple targets with exclusions\n";
-    echo "  php UsageScanner.php --search=\"User,Logger::log\" --exclude=\"vendor,tests\" --cache-dir=\"/tmp/cache\"\n\n";
-
-    echo "  # Export to CSV for analysis\n";
-    echo "  php UsageScanner.php --search=\"User\" --csv=\"user-usage.csv\" --csv-summary=\"summary.csv\"\n\n";
-
-    echo "  # Interactive stdin input\n";
-    echo "  php UsageScanner.php --stdin\n\n";
-
-    echo "  # Piped input from file\n";
-    echo "  echo -e \"User\\nLogger::log\\nDatabase::connect\" | php UsageScanner.php --stdin --csv=\"results.csv\"\n\n";
-
-    echo "  # Complete workflow with type inference\n";
-    echo "  cat targets.txt | php UsageScanner.php --stdin --path=\"/app/src\" --exclude=\"vendor,tests\" --csv=\"detailed.csv\" --csv-summary=\"summary.csv\"\n\n";
-
-    echo "Features:\n";
-    echo "  - Type-aware method detection (avoids false positives)\n";
-    echo "  - Intelligent caching for fast re-scans\n";
-    echo "  - Memory-efficient streaming for large codebases\n";
-    echo "  - CSV export for data analysis and reporting\n";
-    echo "  - Support for namespaced classes and use statements\n";
-    echo "  - Property type inference from docblocks and type hints\n";
-}
 
 // Main execution
 try {
-    list($searchTargets, $scanPath, $excludePaths, $cacheDir, $cacheEnabled, $csvFile, $csvSummaryFile) = parseArguments();
+    list($searchTargets, $scanPath, $excludePaths, $cacheDir, $cacheEnabled,
+        $csvFile, $csvSummaryFile, $memoryReportFile) = parseArguments();
 
     echo "PHP Usage Scanner with Type Inference\n";
     echo str_repeat("=", 40) . "\n";
@@ -459,6 +434,9 @@ try {
     if ($csvSummaryFile) {
         echo "CSV Summary: {$csvSummaryFile}\n";
     }
+    if ($memoryReportFile) {
+        echo "Memory Report: {$memoryReportFile}\n";
+    }
     echo "Initial memory usage: " . (function() {
             $bytes = memory_get_usage(true);
             return round($bytes / 1024 / 1024, 2) . ' MB';
@@ -467,6 +445,7 @@ try {
 
     $cacheManager = $cacheEnabled ? new CacheManager($cacheDir, $searchTargets, $excludePaths) : null;
     $scanner = new StreamingFileScanner($searchTargets, $excludePaths, $cacheManager);
+
     $scanner->scanDirectory($scanPath);
     $scanner->displayResults();
 
@@ -477,6 +456,11 @@ try {
 
     if ($csvSummaryFile) {
         $scanner->exportSummaryToCsv($csvSummaryFile);
+    }
+
+    // Export memory report if requested
+    if ($memoryReportFile) {
+        $scanner->exportMemoryReport($memoryReportFile);
     }
 
 } catch (Exception $e) {

@@ -22,6 +22,18 @@ class StreamingFileScanner
     private ?CacheManager $cacheManager;
     private int $skippedFiles = 0;
 
+    private int $memoryWarningThreshold = 200 * 1024 * 1024; // 200MB
+    private int $memoryCriticalThreshold = 500 * 1024 * 1024; // 500MB
+    private int $maxFileSize = 50 * 1024 * 1024; // 50MB
+    private int $largeFileThreshold = 5 * 1024 * 1024; // 5MB
+    private int $memoryChecksInterval = 10; // Check memory every N files
+
+    private array $memoryHogFiles = []; // Track files that use lots of memory
+    private int $memoryTrackingThreshold = 10 * 1024 * 1024; // 10MB
+    private int $topMemoryFiles = 10; // Track top N memory-consuming files
+    private int $currentPeakMemory = 0;
+    private ?string $peakMemoryFile = null;
+
 
     public function __construct(array $searchTargets, array $excludePaths = [], ?CacheManager $cacheManager = null, ?PhpVersion $version = null)
     {
@@ -40,6 +52,372 @@ class StreamingFileScanner
         if (!$this->outputHandle) {
             throw new RuntimeException("Cannot create temporary file for results");
         }
+    }
+
+
+
+    private function recordMemoryHogFile(string $filePath, int $fileSize, int $memoryUsed, int $peakIncrease, int $totalMemoryAfter): void
+    {
+        $this->memoryHogFiles[] = [
+            'file' => $filePath,
+            'file_size' => $fileSize,
+            'memory_used' => $memoryUsed,
+            'peak_increase' => $peakIncrease,
+            'total_memory_after' => $totalMemoryAfter,
+            'timestamp' => microtime(true)
+        ];
+
+        // Keep only the top memory-consuming files
+        if (count($this->memoryHogFiles) > $this->topMemoryFiles * 2) {
+            // Sort by memory used (descending) and keep top entries
+            usort($this->memoryHogFiles, function($a, $b) {
+                return $b['memory_used'] <=> $a['memory_used'];
+            });
+            $this->memoryHogFiles = array_slice($this->memoryHogFiles, 0, $this->topMemoryFiles);
+        }
+    }
+
+    private function updateProgress(): void
+    {
+        $now = microtime(true);
+
+        // Update progress every 0.1 seconds or every 10 files, whichever comes first
+        if ($now - $this->lastProgressUpdate >= 0.1 || $this->processedFiles % 10 === 0) {
+            $percentage = $this->totalFiles > 0 ? ($this->processedFiles / $this->totalFiles) * 100 : 0;
+            $currentMemory = memory_get_usage(true);
+
+            // Print progress dots and percentage
+            echo ".";
+
+            if ($this->processedFiles % 50 === 0 || $this->processedFiles === $this->totalFiles) {
+                $memoryUsage = $this->formatBytes($currentMemory);
+                $cacheInfo = $this->skippedFiles > 0 ? " (Cached: {$this->skippedFiles})" : "";
+
+                // Add memory warning if high
+                $memoryWarning = $this->getMemoryWarning($currentMemory);
+
+                echo sprintf(" [%d/%d] %.1f%% (Memory: %s)%s%s\n",
+                    $this->processedFiles, $this->totalFiles, $percentage, $memoryUsage, $cacheInfo, $memoryWarning);
+            }
+
+            $this->lastProgressUpdate = $now;
+        }
+    }
+
+    private function getMemoryWarning(int $currentMemory): string
+    {
+        if ($currentMemory >= 500 * 1024 * 1024) { // 500MB
+            return " 🔥 CRITICAL";
+        } elseif ($currentMemory >= 300 * 1024 * 1024) { // 300MB
+            return " ⚠️  HIGH";
+        } elseif ($currentMemory >= 200 * 1024 * 1024) { // 200MB
+            return " ⚠️  ELEVATED";
+        }
+        return "";
+    }
+
+    public function displayResults(): void
+    {
+        if ($this->filesWithUsages === 0) {
+            echo "No usages found.\n";
+        } else {
+            // ... existing results display code ...
+        }
+
+        $peakMemory = memory_get_peak_usage(true);
+        $currentMemory = memory_get_usage(true);
+
+        echo "\n" . str_repeat("=", 80) . "\n";
+        echo "MEMORY ANALYSIS\n";
+        echo str_repeat("=", 80) . "\n";
+
+        echo "Current memory usage: {$this->formatBytes($currentMemory)}\n";
+        echo "Peak memory usage: {$this->formatBytes($peakMemory)}\n";
+
+        if ($this->peakMemoryFile) {
+            echo "Peak memory caused by: {$this->peakMemoryFile}\n";
+        }
+
+        if (!empty($this->memoryHogFiles)) {
+            echo "\nTop Memory-Consuming Files:\n";
+            echo str_repeat("-", 80) . "\n";
+
+            // Sort by memory used
+            usort($this->memoryHogFiles, function($a, $b) {
+                return $b['memory_used'] <=> $a['memory_used'];
+            });
+
+            $rank = 1;
+            foreach (array_slice($this->memoryHogFiles, 0, $this->topMemoryFiles) as $fileInfo) {
+                $relativePath = $this->getRelativePath($fileInfo['file']);
+                echo sprintf("%2d. %s\n", $rank, $relativePath);
+                echo sprintf("    File size: %s\n", $this->formatBytes($fileInfo['file_size']));
+                echo sprintf("    Memory used: %s\n", $this->formatBytes($fileInfo['memory_used']));
+                echo sprintf("    Peak increase: %s\n", $this->formatBytes($fileInfo['peak_increase']));
+                echo sprintf("    Total memory after: %s\n", $this->formatBytes($fileInfo['total_memory_after']));
+                echo "\n";
+                $rank++;
+            }
+
+            // Analysis and recommendations
+            $totalMemoryFromFiles = array_sum(array_column($this->memoryHogFiles, 'memory_used'));
+            $avgFileSize = array_sum(array_column($this->memoryHogFiles, 'file_size')) / count($this->memoryHogFiles);
+
+            echo "Analysis:\n";
+            echo "- Files tracked: " . count($this->memoryHogFiles) . "\n";
+            echo "- Total memory from tracked files: {$this->formatBytes($totalMemoryFromFiles)}\n";
+            echo "- Average size of memory-heavy files: {$this->formatBytes($avgFileSize)}\n";
+
+            // Recommendations
+            echo "\nRecommendations:\n";
+            if ($avgFileSize > 1024 * 1024) { // > 1MB average
+                echo "- Consider excluding large auto-generated files\n";
+            }
+            if ($totalMemoryFromFiles > 100 * 1024 * 1024) { // > 100MB total
+                echo "- Use --exclude to skip directories with large files\n";
+                echo "- Consider processing smaller directory chunks\n";
+            }
+
+            // Show specific exclusion suggestions
+            $directories = [];
+            foreach ($this->memoryHogFiles as $fileInfo) {
+                $dir = dirname($fileInfo['file']);
+                $directories[$dir] = ($directories[$dir] ?? 0) + 1;
+            }
+
+            if (count($directories) > 0) {
+                arsort($directories);
+                echo "- Directories with many large files:\n";
+                foreach (array_slice($directories, 0, 5, true) as $dir => $count) {
+                    $relativeDir = $this->getRelativePath($dir);
+                    echo "  * {$relativeDir} ({$count} files)\n";
+                }
+            }
+        }
+
+        echo "\n" . str_repeat("=", 80) . "\n";
+        echo "SUMMARY\n";
+        echo str_repeat("=", 80) . "\n";
+        // ... existing summary code ...
+    }
+
+    private function getRelativePath(string $fullPath): string
+    {
+        // Try to make path relative to current working directory for cleaner output
+        $cwd = getcwd();
+        if ($cwd && strpos($fullPath, $cwd) === 0) {
+            return '.' . substr($fullPath, strlen($cwd));
+        }
+        return $fullPath;
+    }
+
+    public function exportMemoryReport(string $csvFile): void
+    {
+        if (empty($this->memoryHogFiles)) {
+            echo "No memory-intensive files to export.\n";
+            return;
+        }
+
+        $csvHandle = fopen($csvFile, 'w');
+        if (!$csvHandle) {
+            throw new RuntimeException("Cannot create memory report CSV: {$csvFile}");
+        }
+
+        try {
+            // Write CSV headers
+            fputcsv($csvHandle, [
+                'Rank',
+                'File_Path',
+                'File_Size_Bytes',
+                'File_Size_Human',
+                'Memory_Used_Bytes',
+                'Memory_Used_Human',
+                'Peak_Increase_Bytes',
+                'Peak_Increase_Human',
+                'Total_Memory_After_Bytes',
+                'Total_Memory_After_Human'
+            ]);
+
+            // Sort by memory used
+            usort($this->memoryHogFiles, function($a, $b) {
+                return $b['memory_used'] <=> $a['memory_used'];
+            });
+
+            $rank = 1;
+            foreach ($this->memoryHogFiles as $fileInfo) {
+                fputcsv($csvHandle, [
+                    $rank,
+                    $fileInfo['file'],
+                    $fileInfo['file_size'],
+                    $this->formatBytes($fileInfo['file_size']),
+                    $fileInfo['memory_used'],
+                    $this->formatBytes($fileInfo['memory_used']),
+                    $fileInfo['peak_increase'],
+                    $this->formatBytes($fileInfo['peak_increase']),
+                    $fileInfo['total_memory_after'],
+                    $this->formatBytes($fileInfo['total_memory_after'])
+                ]);
+                $rank++;
+            }
+
+            echo "\nMemory report exported: {$csvFile}\n";
+            echo "Exported " . count($this->memoryHogFiles) . " memory-intensive files.\n";
+
+        } finally {
+            fclose($csvHandle);
+        }
+    }
+
+
+
+    private function checkMemoryUsage(): void
+    {
+        $currentMemory = memory_get_usage(true);
+        $peakMemory = memory_get_peak_usage(true);
+
+        if ($currentMemory >= $this->memoryCriticalThreshold) {
+            echo "\n⚠️  CRITICAL: Memory usage is very high ({$this->formatBytes($currentMemory)})!\n";
+            echo "   Consider using --exclude to skip large directories or files.\n";
+            echo "   Peak memory: {$this->formatBytes($peakMemory)}\n\n";
+
+            // Force aggressive garbage collection
+            $this->forceMemoryCleanup();
+        } elseif ($currentMemory >= $this->memoryWarningThreshold) {
+            echo "\n⚠️  WARNING: High memory usage ({$this->formatBytes($currentMemory)})\n";
+            echo "   Peak memory: {$this->formatBytes($peakMemory)}\n\n";
+
+            // Standard garbage collection
+            gc_collect_cycles();
+        }
+    }
+
+    private function forceMemoryCleanup(): void
+    {
+        // Force garbage collection multiple times
+        for ($i = 0; $i < 3; $i++) {
+            gc_collect_cycles();
+        }
+
+        // Clear any internal caches that might be holding references
+        if (function_exists('opcache_reset')) {
+            @opcache_reset();
+        }
+    }
+
+    private function scanFile(string $filePath): void
+    {
+        $this->processedFiles++;
+
+        try {
+            $fileSize = filesize($filePath);
+
+            // Skip extremely large files
+            if ($fileSize > $this->maxFileSize) {
+                echo "\n  [SKIPPED] File too large: {$filePath} ({$this->formatBytes($fileSize)}) - exceeds {$this->formatBytes($this->maxFileSize)} limit\n";
+                return;
+            }
+
+            $fileModTime = filemtime($filePath);
+
+            // Try to get cached result first
+            if ($this->cacheManager) {
+                $cachedUsages = $this->cacheManager->getCachedResult($filePath, $fileModTime);
+
+                if ($cachedUsages !== null) {
+                    // Cache hit - use cached results
+                    $this->skippedFiles++;
+
+                    if (!empty($cachedUsages)) {
+                        $this->writeUsagesToFile($filePath, $cachedUsages);
+                        $this->filesWithUsages++;
+
+                        foreach ($cachedUsages as $usage) {
+                            $this->totalUsages += $usage['count'];
+                        }
+                    }
+                    return;
+                }
+            }
+
+            // Cache miss - scan the file
+            if ($fileSize > $this->largeFileThreshold) {
+                echo "\n  [LARGE FILE] Processing {$filePath} ({$this->formatBytes($fileSize)})...";
+
+                // Check memory before processing large file
+                $memoryBefore = memory_get_usage(true);
+                if ($memoryBefore > $this->memoryWarningThreshold) {
+                    echo " (Memory before: {$this->formatBytes($memoryBefore)})";
+                    $this->forceMemoryCleanup();
+                }
+            }
+
+            $memoryBeforeFile = memory_get_usage(true);
+
+            $code = file_get_contents($filePath);
+            if ($code === false) {
+                return;
+            }
+
+            $ast = $this->parser->parse($code);
+            if ($ast === null) {
+                return;
+            }
+
+            $this->visitor->setCurrentFile($filePath);
+            $this->traverser->traverse($ast);
+
+            $usages = $this->visitor->getCurrentUsages();
+
+            // Cache the results (even if empty)
+            if ($this->cacheManager) {
+                $this->cacheManager->setCachedResult($filePath, $fileModTime, $usages);
+            }
+
+            if (!empty($usages)) {
+                $this->writeUsagesToFile($filePath, $usages);
+                $this->filesWithUsages++;
+
+                foreach ($usages as $usage) {
+                    $this->totalUsages += $usage['count'];
+                }
+            }
+
+            // Check memory usage after processing
+            $memoryAfterFile = memory_get_usage(true);
+            $memoryDiff = $memoryAfterFile - $memoryBeforeFile;
+
+            if ($fileSize > $this->largeFileThreshold) {
+                echo " Memory used: {$this->formatBytes($memoryDiff)}";
+
+                if ($memoryDiff > 50 * 1024 * 1024) { // 50MB increase
+                    echo " ⚠️  HIGH MEMORY USAGE!";
+                }
+                echo "\n";
+            }
+
+            // Unset large variables to free memory immediately
+            unset($code, $ast, $usages);
+
+            // Force garbage collection for large files
+            if ($fileSize > $this->largeFileThreshold || $memoryDiff > 10 * 1024 * 1024) {
+                gc_collect_cycles();
+            }
+
+        } catch (Error $e) {
+            if ($fileSize > $this->largeFileThreshold) {
+                echo "\n  [PARSE ERROR] Failed to parse large file: {$filePath} - {$e->getMessage()}\n";
+            }
+            // Continue silently for parse errors to avoid cluttering output
+        } catch (Exception $e) {
+            echo "\n  [ERROR] Exception processing {$filePath}: {$e->getMessage()}\n";
+        }
+    }
+
+    public function setMemoryLimits(int $warningMB = 200, int $criticalMB = 500, int $maxFileMB = 50): void
+    {
+        $this->memoryWarningThreshold = $warningMB * 1024 * 1024;
+        $this->memoryCriticalThreshold = $criticalMB * 1024 * 1024;
+        $this->maxFileSize = $maxFileMB * 1024 * 1024;
     }
 
     public function __destruct()
@@ -158,27 +536,7 @@ class StreamingFileScanner
         }
     }
 
-    private function updateProgress(): void
-    {
-        $now = microtime(true);
 
-        // Update progress every 0.1 seconds or every 10 files, whichever comes first
-        if ($now - $this->lastProgressUpdate >= 0.1 || $this->processedFiles % 10 === 0) {
-            $percentage = $this->totalFiles > 0 ? ($this->processedFiles / $this->totalFiles) * 100 : 0;
-
-            // Print progress dots and percentage
-            echo ".";
-
-            if ($this->processedFiles % 50 === 0 || $this->processedFiles === $this->totalFiles) {
-                $memoryUsage = $this->formatBytes(memory_get_usage(true));
-                $cacheInfo = $this->skippedFiles > 0 ? " (Cached: {$this->skippedFiles})" : "";
-                echo sprintf(" [%d/%d] %.1f%% (Memory: %s)%s\n",
-                    $this->processedFiles, $this->totalFiles, $percentage, $memoryUsage, $cacheInfo);
-            }
-
-            $this->lastProgressUpdate = $now;
-        }
-    }
 
     private function formatBytes(int $bytes): string
     {
@@ -202,77 +560,7 @@ class StreamingFileScanner
         return false;
     }
 
-    private function scanFile(string $filePath): void
-    {
-        $this->processedFiles++;
 
-        try {
-            $fileModTime = filemtime($filePath);
-
-            // Try to get cached result first
-            if ($this->cacheManager) {
-                $cachedUsages = $this->cacheManager->getCachedResult($filePath, $fileModTime);
-
-                if ($cachedUsages !== null) {
-                    // Cache hit - use cached results
-                    $this->skippedFiles++;
-
-                    if (!empty($cachedUsages)) {
-                        $this->writeUsagesToFile($filePath, $cachedUsages);
-                        $this->filesWithUsages++;
-
-                        foreach ($cachedUsages as $usage) {
-                            $this->totalUsages += $usage['count'];
-                        }
-                    }
-                    return;
-                }
-            }
-
-            // Cache miss - scan the file
-            $fileSize = filesize($filePath);
-            if ($fileSize > 10 * 1024 * 1024) { // 10MB
-                echo "\n  [LARGE FILE] Processing {$filePath} ({$this->formatBytes($fileSize)})...";
-            }
-
-            $code = file_get_contents($filePath);
-            if ($code === false) {
-                return;
-            }
-
-            $ast = $this->parser->parse($code);
-            if ($ast === null) {
-                return;
-            }
-
-            $this->visitor->setCurrentFile($filePath);
-            $this->traverser->traverse($ast);
-
-            $usages = $this->visitor->getCurrentUsages();
-
-            // Cache the results (even if empty)
-            if ($this->cacheManager) {
-                $this->cacheManager->setCachedResult($filePath, $fileModTime, $usages);
-            }
-
-            if (!empty($usages)) {
-                $this->writeUsagesToFile($filePath, $usages);
-                $this->filesWithUsages++;
-
-                foreach ($usages as $usage) {
-                    $this->totalUsages += $usage['count'];
-                }
-            }
-
-            // Unset large variables to free memory immediately
-            unset($code, $ast, $usages);
-
-        } catch (Error $e) {
-            // Continue silently for parse errors to avoid cluttering output
-        } catch (Exception $e) {
-            // Continue silently for other errors
-        }
-    }
 
     private function writeUsagesToFile(string $filePath, array $usages): void
     {
@@ -284,66 +572,7 @@ class StreamingFileScanner
         fwrite($this->outputHandle, $data);
     }
 
-    public function displayResults(): void
-    {
-        if ($this->filesWithUsages === 0) {
-            echo "No usages found.\n";
-            return;
-        }
 
-        echo "\n" . str_repeat("=", 80) . "\n";
-        echo "USAGE SCAN RESULTS\n";
-        echo str_repeat("=", 80) . "\n";
-
-        // Reset file pointer to read results
-        rewind($this->outputHandle);
-
-        $targetSummary = [];
-
-        while (($line = fgets($this->outputHandle)) !== false) {
-            $data = json_decode(trim($line), true);
-            if (!$data) continue;
-
-            $file = $data['file'];
-            $usages = $data['usages'];
-
-            echo "\nFile: " . $file . "\n";
-            echo str_repeat("-", min(80, strlen($file) + 6)) . "\n";
-
-            foreach ($usages as $target => $info) {
-                echo "  {$target}: {$info['count']} usage(s)\n";
-                echo "    Lines: " . implode(', ', $info['lines']) . "\n";
-
-                // Count by type
-                $typeCounts = array_count_values($info['types']);
-                foreach ($typeCounts as $type => $count) {
-                    echo "    {$type}: {$count} occurrence(s)\n";
-                }
-
-                // Build summary
-                if (!isset($targetSummary[$target])) {
-                    $targetSummary[$target] = ['count' => 0, 'files' => 0];
-                }
-                $targetSummary[$target]['count'] += $info['count'];
-                $targetSummary[$target]['files']++;
-            }
-        }
-
-        echo "\n" . str_repeat("=", 80) . "\n";
-        echo "SUMMARY\n";
-        echo str_repeat("=", 80) . "\n";
-        echo "Total files scanned: {$this->processedFiles}\n";
-        echo "Files with usages: {$this->filesWithUsages}\n";
-        echo "Total usages found: {$this->totalUsages}\n";
-        echo "Peak memory usage: {$this->formatBytes(memory_get_peak_usage(true))}\n";
-
-        if (!empty($targetSummary)) {
-            echo "\nUsage by target:\n";
-            foreach ($targetSummary as $target => $summary) {
-                echo "  {$target}: {$summary['count']} usage(s) across {$summary['files']} file(s)\n";
-            }
-        }
-    }
 
     public function exportToCsv(string $csvFile): void
     {
