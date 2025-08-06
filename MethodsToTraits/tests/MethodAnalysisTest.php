@@ -25,7 +25,7 @@ class MethodAnalysisTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->rector = $this->proxy(new MethodsToTraitsRector());
+        $this->rector = TestingHelper::proxy(new MethodsToTraitsRector());
     }
 
     public function testMethodPatternMatching(): void
@@ -157,20 +157,6 @@ class MethodAnalysisTest extends TestCase
         );
     }
 
-    private function proxy(object $instance): object
-    {
-        return new class($instance){
-            private object $instance;
-
-            public function __construct($instance){
-                $this->instance = $instance;
-            }
-            public function __call(string $name, array $arguments): mixed
-            {
-                return Closure::bind(fn()=>$name(...$arguments), $this->instance);
-            }
-        };
-    }
 
 
 }

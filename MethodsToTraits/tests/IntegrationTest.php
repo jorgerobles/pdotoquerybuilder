@@ -23,7 +23,7 @@ class IntegrationTest extends TestCase
         $this->tempDir = sys_get_temp_dir() . '/rector_traits_test_' . uniqid();
         mkdir($this->tempDir, 0777, true);
 
-        $this->rector = $this->proxy(new MethodsToTraitsRector());
+        $this->rector = TestingHelper::proxy(new MethodsToTraitsRector());
         $this->rector->configure([
             'trait_namespace' => 'Test\\Traits',
             'output_directory' => $this->tempDir,
@@ -133,21 +133,6 @@ class IntegrationTest extends TestCase
         rmdir($dir);
     }
 
-
-    private function proxy(object $instance): object
-    {
-        return new class($instance){
-            private object $instance;
-
-            public function __construct($instance){
-                $this->instance = $instance;
-            }
-            public function __call(string $name, array $arguments): mixed
-            {
-                return Closure::bind(fn()=>$name(...$arguments), $this->instance);
-            }
-        };
-    }
 
     private function createMethodNode(string $string): ClassMethod
     {

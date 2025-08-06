@@ -5,9 +5,11 @@ A powerful Rector plugin that automatically extracts public methods from classes
 ## 🚀 Features
 
 - **Smart Method Detection**: Extract methods by prefixes, suffixes, annotations, or attributes
-- **Intelligent Grouping**: Group related methods into cohesive traits
+- **Unified Configuration**: All extraction types in one `extract_patterns` configuration
+- **1:1 Method Mapping**: Extract individual methods to their own traits with auto-naming
+- **N:1 Method Grouping**: Group multiple specific methods into single traits
+- **Intelligent Grouping**: Group related methods into cohesive traits automatically
 - **Dependency Analysis**: Handle method dependencies (properties, constants, other methods)
-- **Multiple Strategies**: Support for various extraction and grouping approaches
 - **File Generation**: Automatically generate trait files with proper namespacing
 - **Configurable**: Highly customizable with extensive configuration options
 
@@ -19,7 +21,9 @@ composer require --dev rector/rector
 
 Add the plugin to your project and configure your `rector.php` file.
 
-## 🔧 Configuration
+## 🔧 Unified Configuration
+
+All extraction logic is now unified under `extract_patterns` with different pattern types:
 
 ### Basic Configuration
 
@@ -29,17 +33,42 @@ Add the plugin to your project and configure your `rector.php` file.
 declare(strict_types=1);
 
 use Rector\Config\RectorConfig;
-use JDR\Rector\MethodsToTraits\PublicMethodsToTraitsRector;
+use JDR\Rector\MethodsToTraits\MethodsToTraitsRector;
 
 return static function (RectorConfig $rectorConfig): void {
     $rectorConfig->paths([__DIR__ . '/src']);
 
-    $rectorConfig->ruleWithConfiguration(PublicMethodsToTraitsRector::class, [
+    $rectorConfig->ruleWithConfiguration(MethodsToTraitsRector::class, [
         'extract_patterns' => [
+            // Pattern-based extraction (unchanged)
             ['type' => 'prefix', 'value' => 'validate'],
             ['type' => 'prefix', 'value' => 'format'],
-            ['type' => 'prefix', 'value' => 'calculate'],
+            ['type' => 'annotation', 'value' => 'extractable'],
+            
+            // NEW: 1:1 method mapping (auto trait names)
+            ['type' => 'methods', 'methods' => ['generateUuid']],      // → generateUuidTrait
+            ['type' => 'methods', 'methods' => ['hashPassword']],      // → hashPasswordTrait
+            
+            // NEW: 1:1 with explicit trait name
+            [
+                'type' => 'methods',
+                'methods' => ['sendEmail'],
+                'trait_name' => 'EmailSenderTrait'
+            ],
+            
+            // NEW: N:1 method group mapping
+            [
+                'type' => 'methods',
+                'trait_name' => 'UserValidationTrait',
+                'methods' => ['validateEmail', 'validatePhone', 'validateAge']
+            ],
+            [
+                'type' => 'methods',
+                'trait_name' => 'DataFormatterTrait',
+                'methods' => ['formatCurrency', 'formatDate', 'formatName']
+            ]
         ],
+
         'trait_namespace' => 'App\\Traits',
         'output_directory' => __DIR__ . '/src/Traits',
         'group_by' => 'functionality',
@@ -48,395 +77,335 @@ return static function (RectorConfig $rectorConfig): void {
 };
 ```
 
-### **NEW: Direct 1:1 Method to Trait Mapping**
-
-```php
-$rectorConfig->ruleWithConfiguration(PublicMethodsToTraitsRector::class, [
-    // Enable direct mapping mode
-    'use_direct_mapping' => true,
-    
-    // Map specific methods to specific traits (1:1 basis)
-    'method_to_trait_map' => [
-        'validateEmail' => 'EmailValidationTrait',
-        'validatePhone' => 'PhoneValidationTrait', 
-        'formatCurrency' => 'CurrencyFormatterTrait',
-        'calculateTax' => 'TaxCalculatorTrait',
-    ],
-
-    'trait_namespace' => 'App\\Traits\\Specific',
-    'output_directory' => __DIR__ . '/src/Traits/Specific',
-]);
-```
-
-### Advanced Configuration
-
-```php
-$rectorConfig->ruleWithConfiguration(PublicMethodsToTraitsRector::class, [
-    // Extraction patterns
-    'extract_patterns' => [
-        ['type' => 'prefix', 'value' => 'validate'],
-        ['type' => 'suffix', 'value' => 'Helper'],
-        ['type' => 'regex', 'value' => '/^(get|set)[A-Z].*Display$/'],
-        ['type' => 'annotation', 'value' => 'extractable'],
-        ['type' => 'attribute', 'value' => 'Extractable'],
-    ],
-
-    // Trait configuration
-    'trait_namespace' => 'App\\Traits',
-    'output_directory' => __DIR__ . '/src/Traits',
-
-    // Grouping strategies
-    'group_by' => 'functionality', // 'functionality', 'prefix', 'annotation', 'attribute'
-    
-    // Extraction rules
-    'min_methods_per_trait' => 2,
-    'exclude_methods' => ['__construct', '__destruct', 'main', 'execute'],
-    
-    // Behavior options
-    'preserve_visibility' => true,
-    'add_trait_use' => true,
-    'generate_files' => true,
-]);
-```
-
 ## 📋 Configuration Options
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `extract_patterns` | array | `[]` | Patterns to match methods for extraction |
+| `extract_patterns` | array | `[]` | **Unified patterns for all extraction types** |
 | `trait_namespace` | string | `'App\\Traits'` | Namespace for generated traits |
 | `output_directory` | string | `'src/Traits'` | Directory to generate trait files |
-| `group_by` | string | `'functionality'` | Grouping strategy |
-| `min_methods_per_trait` | int | `2` | Minimum methods required to create a trait |
+| `group_by` | string | `'functionality'` | Grouping strategy for pattern-based extraction |
+| `min_methods_per_trait` | int | `2` | Minimum methods for pattern-based traits (skipped for explicit groups) |
 | `exclude_methods` | array | `[magic methods]` | Methods to exclude from extraction |
 | `preserve_visibility` | bool | `true` | Preserve method visibility |
 | `add_trait_use` | bool | `true` | Add trait use statements to classes |
 | `generate_files` | bool | `true` | Generate trait files |
-| **`use_direct_mapping`** | **bool** | **`false`** | **Enable 1:1 method-to-trait mapping** |
-| **`method_to_trait_map`** | **array** | **`[]`** | **Direct method name to trait name mapping** |
 
-## 🎯 Extraction Patterns
+## 🎯 Extraction Pattern Types
 
-### By Prefix
+### 1. Pattern-Based Extraction (Unchanged)
+
+Extract methods based on naming patterns or annotations:
+
 ```php
-['type' => 'prefix', 'value' => 'validate']
-```
-Extracts methods starting with "validate": `validateEmail()`, `validatePhone()`
-
-### By Suffix
-```php
-['type' => 'suffix', 'value' => 'Helper']
-```
-Extracts methods ending with "Helper": `emailHelper()`, `phoneHelper()`
-
-### By Regex
-```php
-['type' => 'regex', 'value' => '/^(get|set)[A-Z].*Display$/']
-```
-Extracts methods matching regex: `getEmailDisplay()`, `setNameDisplay()`
-
-### By Annotation
-```php
-['type' => 'annotation', 'value' => 'extractable']
-```
-Extracts methods with `@extractable` annotation
-
-### By Attribute (PHP 8+)
-```php
-['type' => 'attribute', 'value' => 'Extractable']
-```
-Extracts methods with `#[Extractable]` attribute
-
-## 📊 Grouping Strategies
-
-### Functionality (Default)
-Groups methods by detected functionality:
-- **Validation**: `validate*`, `check*`, `verify*`
-- **Formatting**: `format*`, `transform*`, `convert*`
-- **Calculation**: `calculate*`, `compute*`, `sum*`
-- **Generation**: `generate*`, `create*`, `build*`
-- **Parsing**: `parse*`, `extract*`, `decode*`
-- **Utility**: `get*`, `set*`, `is*`, `has*`
-
-### Prefix
-Groups methods by their common prefix:
-```php
-// validate* methods → ValidationTrait
-// format* methods → FormattingTrait
+'extract_patterns' => [
+    ['type' => 'prefix', 'value' => 'validate'],           // validate* methods
+    ['type' => 'suffix', 'value' => 'Helper'],             // *Helper methods
+    ['type' => 'regex', 'value' => '/^(get|set)[A-Z]/'],   // getX, setX methods
+    ['type' => 'annotation', 'value' => 'extractable'],    // @extractable methods
+    ['type' => 'attribute', 'value' => 'Extractable'],     // #[Extractable] methods
+]
 ```
 
-### Annotation
-Groups methods by `@group` annotation:
+### 2. 1:1 Method Mapping (NEW)
+
+Extract individual methods to their own traits:
+
 ```php
-/**
- * @extractable
- * @group utility
- */
-public function generateId(): string { }
+'extract_patterns' => [
+    // Auto-generated trait names
+    ['type' => 'methods', 'methods' => ['generateUuid']],    // → generateUuidTrait
+    ['type' => 'methods', 'methods' => ['hashPassword']],    // → hashPasswordTrait
+    
+    // Explicit trait names
+    [
+        'type' => 'methods',
+        'methods' => ['sendEmail'],
+        'trait_name' => 'EmailSenderTrait'
+    ]
+]
 ```
 
-### Attribute
-Groups methods by `Group` attribute:
+### 3. N:1 Method Grouping (NEW)
+
+Group multiple specific methods into single traits:
+
 ```php
-#[Extractable]
-#[Group('caching')]
-public function getCachedData(): array { }
+'extract_patterns' => [
+    [
+        'type' => 'methods',
+        'trait_name' => 'UserValidationTrait',
+        'methods' => ['validateEmail', 'validatePhone', 'validateAge']
+    ],
+    [
+        'type' => 'methods',
+        'trait_name' => 'PaymentHelpersTrait',
+        'methods' => ['calculateTax', 'formatAmount', 'validateCard']
+    ]
+]
 ```
 
 ## 💡 Usage Examples
 
-### **NEW: Example 1 - Direct 1:1 Method Mapping**
+### Example 1: Individual Method Extraction
 
 **Configuration:**
 ```php
-$rectorConfig->ruleWithConfiguration(PublicMethodsToTraitsRector::class, [
-    'use_direct_mapping' => true,
-    'method_to_trait_map' => [
-        'validateEmail' => 'EmailValidationTrait',
-        'formatCurrency' => 'CurrencyFormatterTrait',
-        'calculateTax' => 'TaxCalculatorTrait',
+'extract_patterns' => [
+    ['type' => 'methods', 'methods' => ['generateApiKey']],  // → generateApiKeyTrait
+    ['type' => 'methods', 'methods' => ['encryptData']],     // → encryptDataTrait
+]
+```
+
+**Before:**
+```php
+class OrderService
+{
+    public function generateApiKey(): string
+    {
+        return bin2hex(random_bytes(32));
+    }
+
+    public function encryptData(string $data): string
+    {
+        return openssl_encrypt($data, 'AES-256-CBC', $this->key);
+    }
+
+    public function processOrder(array $data): void
+    {
+        // Core business logic stays
+    }
+}
+```
+
+**After:**
+```php
+class OrderService
+{
+    use GenerateApiKeyTrait;    // Single method trait
+    use EncryptDataTrait;       // Single method trait
+
+    public function processOrder(array $data): void
+    {
+        // Core business logic stays
+    }
+}
+```
+
+### Example 2: Method Grouping
+
+**Configuration:**
+```php
+'extract_patterns' => [
+    [
+        'type' => 'methods',
+        'trait_name' => 'StringUtilitiesTrait',
+        'methods' => ['slugify', 'sanitizeHtml', 'truncateText']
+    ]
+]
+```
+
+**Before:**
+```php
+class ContentService
+{
+    public function slugify(string $text): string
+    {
+        return strtolower(trim(preg_replace('/[^A-Za-z0-9-]+/', '-', $text), '-'));
+    }
+
+    public function sanitizeHtml(string $html): string
+    {
+        return htmlspecialchars($html, ENT_QUOTES, 'UTF-8');
+    }
+
+    public function truncateText(string $text, int $length): string
+    {
+        return strlen($text) > $length ? substr($text, 0, $length) . '...' : $text;
+    }
+
+    public function publishContent(array $data): void
+    {
+        // Core business logic stays
+    }
+}
+```
+
+**After:**
+```php
+class ContentService
+{
+    use StringUtilitiesTrait;   // Multiple methods in one trait
+
+    public function publishContent(array $data): void
+    {
+        // Core business logic stays
+    }
+}
+```
+
+### Example 3: Mixed Strategies
+
+**Configuration:**
+```php
+'extract_patterns' => [
+    // Pattern-based: All validate* methods grouped automatically
+    ['type' => 'prefix', 'value' => 'validate'],
+    
+    // 1:1: Special methods get their own traits  
+    ['type' => 'methods', 'methods' => ['generateHash']],
+    
+    // N:1: Group related formatting methods
+    [
+        'type' => 'methods',
+        'trait_name' => 'DisplayFormatterTrait',
+        'methods' => ['formatMoney', 'formatPercentage', 'formatFileSize']
+    ]
+]
+```
+
+**Before:**
+```php
+class UserService
+{
+    // Pattern-based extraction
+    public function validateEmail(string $email): bool { /* ... */ }
+    public function validatePhone(string $phone): bool { /* ... */ }
+    
+    // 1:1 extraction
+    public function generateHash(string $data): string { /* ... */ }
+    
+    // N:1 extraction
+    public function formatMoney(float $amount): string { /* ... */ }
+    public function formatPercentage(float $value): string { /* ... */ }
+    public function formatFileSize(int $bytes): string { /* ... */ }
+    
+    // Stays in class
+    public function saveUser(array $data): void { /* ... */ }
+}
+```
+
+**After:**
+```php
+class UserService
+{
+    use ValidationTrait;         // Pattern-based grouping
+    use GenerateHashTrait;       // 1:1 extraction
+    use DisplayFormatterTrait;   // N:1 explicit grouping
+
+    public function saveUser(array $data): void { /* ... */ }
+}
+```
+
+## 🔍 Configuration Validation
+
+The plugin includes built-in validation:
+
+```php
+// ✅ Valid: Single method with auto trait name
+['type' => 'methods', 'methods' => ['generateId']]
+
+// ✅ Valid: Single method with explicit name
+['type' => 'methods', 'methods' => ['generateId'], 'trait_name' => 'IdGeneratorTrait']
+
+// ✅ Valid: Multiple methods with explicit trait name
+['type' => 'methods', 'trait_name' => 'HelpersTrait', 'methods' => ['method1', 'method2']]
+
+// ❌ Invalid: Multiple methods without explicit trait name
+['type' => 'methods', 'methods' => ['method1', 'method2']]  // Throws exception
+
+// ❌ Invalid: Empty methods array
+['type' => 'methods', 'methods' => []]  // Throws exception
+```
+
+## 🏃‍♂️ Running the Plugin
+
+```bash
+# Dry run to see what would be extracted
+vendor/bin/rector process --dry-run
+
+# Apply transformations
+vendor/bin/rector process
+
+# Process specific directory
+vendor/bin/rector process src/Services
+
+# With debug output
+vendor/bin/rector process --debug
+```
+
+## 📁 Generated File Structure
+
+```
+src/
+├── Traits/
+│   ├── GenerateUuidTrait.php           # 1:1 extraction
+│   ├── HashPasswordTrait.php           # 1:1 extraction
+│   ├── UserValidationTrait.php         # N:1 grouping
+│   ├── StringUtilitiesTrait.php        # N:1 grouping
+│   ├── ValidationTrait.php             # Pattern-based
+│   └── FormattingTrait.php             # Pattern-based
+├── Services/
+│   ├── UserService.php (modified)
+│   └── OrderService.php (modified)
+```
+
+## 🎛️ Real-World Configuration Examples
+
+### Legacy Code Refactoring
+```php
+'extract_patterns' => [
+    // Extract problematic legacy methods
+    [
+        'type' => 'methods',
+        'trait_name' => 'LegacyHelpersTrait',
+        'methods' => ['legacyDateFormat', 'legacyValidation', 'legacyStringClean']
+    ]
+]
+```
+
+### Team-Specific Organization
+```php
+'extract_patterns' => [
+    // User management utilities
+    [
+        'type' => 'methods',
+        'trait_name' => 'UserUtilitiesTrait', 
+        'methods' => ['hashPassword', 'generateToken', 'validateSession']
     ],
-]);
+    
+    // Payment processing helpers
+    [
+        'type' => 'methods',
+        'trait_name' => 'PaymentHelpersTrait',
+        'methods' => ['calculateTax', 'formatAmount', 'validateCard']
+    ]
+]
 ```
 
-**Before:**
+### Security-Focused Extraction
 ```php
-class OrderService
-{
-    public function validateEmail(string $email): bool
-    {
-        return filter_var($email, FILTER_VALIDATE_EMAIL) !== false;
-    }
-
-    public function formatCurrency(float $amount): string
-    {
-        return '
-
-**Before:**
-```php
-class UserService
-{
-    public function validateEmail(string $email): bool
-    {
-        return filter_var($email, FILTER_VALIDATE_EMAIL) !== false;
-    }
-
-    public function formatEmail(string $email): string
-    {
-        return strtolower(trim($email));
-    }
-
-    public function saveUser(array $data): void
-    {
-        // Main business logic
-    }
-}
+'extract_patterns' => [
+    // Extract security methods to dedicated traits
+    ['type' => 'methods', 'methods' => ['encryptSensitiveData']],
+    ['type' => 'methods', 'methods' => ['generateCsrfToken']],
+    ['type' => 'methods', 'methods' => ['sanitizeUserInput']],
+]
 ```
 
-**After:**
-```php
-class UserService
-{
-    use ValidationTrait;
-    use FormattingTrait;
+## ⚠️ Important Notes
 
-    public function saveUser(array $data): void
-    {
-        // Main business logic
-    }
-}
-```
-
-### Example 2: Using Annotations
-
-**Before:**
-```php
-class ProductService
-{
-    /**
-     * @extractable
-     * @group utility
-     */
-    public function generateSku(): string
-    {
-        return 'SKU-' . uniqid();
-    }
-
-    public function createProduct(array $data): Product
-    {
-        // Core business logic
-    }
-}
-```
-
-**After:**
-```php
-class ProductService
-{
-    use UtilityTrait;
-
-    public function createProduct(array $data): Product
-    {
-        // Core business logic
-    }
-}
-```
-
-### Example 3: PHP 8 Attributes
-
-**Before:**
-```php
-class OrderService
-{
-    #[Extractable(group: 'caching')]
-    public function getCachedTotal(int $orderId): ?float
-    {
-        return $this->cache->get("order_total_{$orderId}");
-    }
-
-    public function processOrder(array $data): Order
-    {
-        // Core business logic
-    }
-}
-```
-
-**After:**
-```php
-class OrderService
-{
-    use CachingTrait;
-
-    public function processOrder(array $data): Order
-    {
-        // Core business logic
-    }
-}
-```
-
-## 🔍 Dependency Handling
-
-The plugin intelligently analyzes method dependencies:
-
-- **Properties**: Moves required private properties to traits
-- **Constants**: Moves required class constants to traits
-- **Methods**: Identifies method interdependencies
-- **Complex Cases**: Flags complex dependencies for manual review
-
-**Example:**
-```php
-// Before
-class PaymentService
-{
-    private const TAX_RATE = 0.21;
-    private $validator;
-
-    public function calculateTax(float $amount): float
-    {
-        return $amount * self::TAX_RATE; // Uses constant
-    }
-
-    public function validateCard(string $card): bool
-    {
-        return $this->validator->validate($card); // Uses property
-    }
-}
-
-// After - Generated CalculationTrait
-trait CalculationTrait
-{
-    private const TAX_RATE = 0.21; // Moved constant
-
-    public function calculateTax(float $amount): float
-    {
-        return $amount * self::TAX_RATE;
-    }
-}
-```
-
-## 🏃‍♂️ Running the Plugin
-
-```bash
-# Dry run to see what would be extracted
-vendor/bin/rector process --dry-run
-
-# Apply transformations
-vendor/bin/rector process
-
-# Process specific directory
-vendor/bin/rector process src/Services
-
-# With debug output
-vendor/bin/rector process --debug
-
-# Custom config
-vendor/bin/rector process --config=rector-traits.php
-```
-
-## 📁 Generated File Structure
-
-```
-src/
-├── Traits/
-│   ├── ValidationTrait.php
-│   ├── FormattingTrait.php
-│   ├── CalculationTrait.php
-│   └── UtilityTrait.php
-├── Services/
-│   ├── UserService.php (modified)
-│   └── ProductService.php (modified)
-```
-
-## 🧪 Testing
-
-The plugin includes comprehensive test fixtures:
-
-```bash
-vendor/bin/phpunit tests/PublicMethodsToTraitsRectorTest.php
-```
-
-Test scenarios:
-- ✅ Basic method extraction
-- ✅ Annotation-based extraction
-- ✅ Attribute-based extraction
-- ✅ Dependency handling
-- ✅ Complex grouping scenarios
-- ✅ Edge cases and error handling
-
-## 🎛️ Multiple Configurations
-
-You can run multiple extraction strategies:
-
-```php
-// Strategy 1: Extract helpers
-$rectorConfig->ruleWithConfiguration(PublicMethodsToTraitsRector::class, [
-    'extract_patterns' => [['type' => 'suffix', 'value' => 'Helper']],
-    'trait_namespace' => 'App\\Traits\\Helpers',
-    'output_directory' => __DIR__ . '/src/Traits/Helpers',
-]);
-
-// Strategy 2: Extract validators  
-$rectorConfig->ruleWithConfiguration(PublicMethodsToTraitsRector::class, [
-    'extract_patterns' => [['type' => 'prefix', 'value' => 'validate']],
-    'trait_namespace' => 'App\\Traits\\Validation',
-    'output_directory' => __DIR__ . '/src/Traits/Validation',
-]);
-```
-
-## ⚠️ Important Considerations
-
-1. **Backup Your Code**: Always backup before running transformations
-2. **Review Dependencies**: Check extracted traits for proper dependencies
-3. **Test Thoroughly**: Run your test suite after extraction
-4. **Namespace Conflicts**: Ensure trait namespaces don't conflict
-5. **Method Visibility**: Consider if extracted methods should remain public
+1. **Configuration Validation**: Multiple methods require explicit `trait_name`
+2. **Minimum Methods Filter**: Skipped for explicit method groups
+3. **Dependency Handling**: Smart analysis and migration of dependencies
+4. **Backup Recommended**: Always backup code before running transformations
+5. **Test Thoroughly**: Run test suite after extraction
 
 ## 🚫 Limitations
 
 - Complex method interdependencies may require manual review
 - Doesn't handle dynamic method calls or reflection
 - Some edge cases with complex inheritance may need adjustment
-- Generated traits may need manual optimization
 
 ## 🤝 Contributing
 
@@ -449,294 +418,6 @@ $rectorConfig->ruleWithConfiguration(PublicMethodsToTraitsRector::class, [
 ## 📄 License
 
 This project is licensed under the MIT License.
-
-## 🔗 Related Tools
-
-- [Rector](https://getrector.org/) - The main refactoring tool
-- [PHP-Parser](https://github.com/nikic/PHP-Parser) - Used for AST manipulation
-- [PHPStan](https://phpstan.org/) - Static analysis for better code quality
-
----
-
-**Happy refactoring! 🎉** . number_format($amount, 2);
-}
-
-    public function calculateTax(float $amount): float
-    {
-        return $amount * 0.21;
-    }
-
-    public function processOrder(array $data): void
-    {
-        // This stays - not in mapping
-    }
-}
-```
-
-**After:**
-```php
-class OrderService
-{
-    use EmailValidationTrait;
-    use CurrencyFormatterTrait;
-    use TaxCalculatorTrait;
-
-    public function processOrder(array $data): void
-    {
-        // This stays - not in mapping
-    }
-}
-
-// Generated: EmailValidationTrait.php (one method per trait)
-// Generated: CurrencyFormatterTrait.php (one method per trait)  
-// Generated: TaxCalculatorTrait.php (one method per trait)
-```
-
-### Example 2: Basic Validation & Formatting
-
-**Before:**
-```php
-class UserService
-{
-    public function validateEmail(string $email): bool
-    {
-        return filter_var($email, FILTER_VALIDATE_EMAIL) !== false;
-    }
-
-    public function formatEmail(string $email): string
-    {
-        return strtolower(trim($email));
-    }
-
-    public function saveUser(array $data): void
-    {
-        // Main business logic
-    }
-}
-```
-
-**After:**
-```php
-class UserService
-{
-    use ValidationTrait;
-    use FormattingTrait;
-
-    public function saveUser(array $data): void
-    {
-        // Main business logic
-    }
-}
-```
-
-### Example 2: Using Annotations
-
-**Before:**
-```php
-class ProductService
-{
-    /**
-     * @extractable
-     * @group utility
-     */
-    public function generateSku(): string
-    {
-        return 'SKU-' . uniqid();
-    }
-
-    public function createProduct(array $data): Product
-    {
-        // Core business logic
-    }
-}
-```
-
-**After:**
-```php
-class ProductService
-{
-    use UtilityTrait;
-
-    public function createProduct(array $data): Product
-    {
-        // Core business logic
-    }
-}
-```
-
-### Example 3: PHP 8 Attributes
-
-**Before:**
-```php
-class OrderService
-{
-    #[Extractable(group: 'caching')]
-    public function getCachedTotal(int $orderId): ?float
-    {
-        return $this->cache->get("order_total_{$orderId}");
-    }
-
-    public function processOrder(array $data): Order
-    {
-        // Core business logic
-    }
-}
-```
-
-**After:**
-```php
-class OrderService
-{
-    use CachingTrait;
-
-    public function processOrder(array $data): Order
-    {
-        // Core business logic
-    }
-}
-```
-
-## 🔍 Dependency Handling
-
-The plugin intelligently analyzes method dependencies:
-
-- **Properties**: Moves required private properties to traits
-- **Constants**: Moves required class constants to traits
-- **Methods**: Identifies method interdependencies
-- **Complex Cases**: Flags complex dependencies for manual review
-
-**Example:**
-```php
-// Before
-class PaymentService
-{
-    private const TAX_RATE = 0.21;
-    private $validator;
-
-    public function calculateTax(float $amount): float
-    {
-        return $amount * self::TAX_RATE; // Uses constant
-    }
-
-    public function validateCard(string $card): bool
-    {
-        return $this->validator->validate($card); // Uses property
-    }
-}
-
-// After - Generated CalculationTrait
-trait CalculationTrait
-{
-    private const TAX_RATE = 0.21; // Moved constant
-
-    public function calculateTax(float $amount): float
-    {
-        return $amount * self::TAX_RATE;
-    }
-}
-```
-
-## 🏃‍♂️ Running the Plugin
-
-```bash
-# Dry run to see what would be extracted
-vendor/bin/rector process --dry-run
-
-# Apply transformations
-vendor/bin/rector process
-
-# Process specific directory
-vendor/bin/rector process src/Services
-
-# With debug output
-vendor/bin/rector process --debug
-
-# Custom config
-vendor/bin/rector process --config=rector-traits.php
-```
-
-## 📁 Generated File Structure
-
-```
-src/
-├── Traits/
-│   ├── ValidationTrait.php
-│   ├── FormattingTrait.php
-│   ├── CalculationTrait.php
-│   └── UtilityTrait.php
-├── Services/
-│   ├── UserService.php (modified)
-│   └── ProductService.php (modified)
-```
-
-## 🧪 Testing
-
-The plugin includes comprehensive test fixtures:
-
-```bash
-vendor/bin/phpunit tests/PublicMethodsToTraitsRectorTest.php
-```
-
-Test scenarios:
-- ✅ Basic method extraction
-- ✅ Annotation-based extraction
-- ✅ Attribute-based extraction
-- ✅ Dependency handling
-- ✅ Complex grouping scenarios
-- ✅ Edge cases and error handling
-
-## 🎛️ Multiple Configurations
-
-You can run multiple extraction strategies:
-
-```php
-// Strategy 1: Extract helpers
-$rectorConfig->ruleWithConfiguration(PublicMethodsToTraitsRector::class, [
-    'extract_patterns' => [['type' => 'suffix', 'value' => 'Helper']],
-    'trait_namespace' => 'App\\Traits\\Helpers',
-    'output_directory' => __DIR__ . '/src/Traits/Helpers',
-]);
-
-// Strategy 2: Extract validators  
-$rectorConfig->ruleWithConfiguration(PublicMethodsToTraitsRector::class, [
-    'extract_patterns' => [['type' => 'prefix', 'value' => 'validate']],
-    'trait_namespace' => 'App\\Traits\\Validation',
-    'output_directory' => __DIR__ . '/src/Traits/Validation',
-]);
-```
-
-## ⚠️ Important Considerations
-
-1. **Backup Your Code**: Always backup before running transformations
-2. **Review Dependencies**: Check extracted traits for proper dependencies
-3. **Test Thoroughly**: Run your test suite after extraction
-4. **Namespace Conflicts**: Ensure trait namespaces don't conflict
-5. **Method Visibility**: Consider if extracted methods should remain public
-
-## 🚫 Limitations
-
-- Complex method interdependencies may require manual review
-- Doesn't handle dynamic method calls or reflection
-- Some edge cases with complex inheritance may need adjustment
-- Generated traits may need manual optimization
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Add tests for new functionality
-4. Ensure all tests pass
-5. Submit a pull request
-
-## 📄 License
-
-This project is licensed under the MIT License.
-
-## 🔗 Related Tools
-
-- [Rector](https://getrector.org/) - The main refactoring tool
-- [PHP-Parser](https://github.com/nikic/PHP-Parser) - Used for AST manipulation
-- [PHPStan](https://phpstan.org/) - Static analysis for better code quality
 
 ---
 

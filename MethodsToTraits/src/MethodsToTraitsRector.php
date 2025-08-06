@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace JDR\Rector\MethodsToTraits;
 
+use InvalidArgumentException;
 use Exception;
 use PhpParser\Node;
 use PhpParser\Node\Expr\BinaryOp\LogicalAnd;
@@ -60,29 +61,73 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
         'preserve_visibility' => true,
         'add_trait_use' => true,
         'generate_files' => true,
-        // NEW: 1:1 extraction mode
-        'method_to_trait_map' => [], // ['methodName' => 'TraitName'] for direct mapping
-        'use_direct_mapping' => false, // Enable 1:1 extraction mode
-        // NEW: Progress indicator
-        'show_progress' => true, // Show progress dots
-        // NEW: Smart dependency migration
-        'auto_move_dependencies' => true, // Automatically move single-use dependencies
-        'move_private_methods' => true, // Move private methods used only by extracted methods
-        'move_private_properties' => true, // Move private properties used only by extracted methods
-        // NEW: Visibility scopes to include for dependency migration
-        'move_method_scopes' => ['private'], // ['private', 'protected', 'public']
-        'move_property_scopes' => ['private'], // ['private', 'protected', 'public']
+        // Progress and dependency options
+        'show_progress' => true,
+        'auto_move_dependencies' => true,
+        'move_private_methods' => true,
+        'move_private_properties' => true,
+        'move_method_scopes' => ['private'],
+        'move_property_scopes' => ['private'],
     ];
 
     private array $extractedTraits = [];
     private array $methodAnalysis = [];
-    // NEW: Track usage across all methods
-    private array $methodUsageMap = []; // ['methodName' => ['usedBy' => [methods], 'isPublic' => bool]]
-    private array $propertyUsageMap = []; // ['propertyName' => ['usedBy' => [methods], 'visibility' => string]]
+    private array $methodUsageMap = [];
+    private array $propertyUsageMap = [];
+    private array $explicitMethodGroups = []; // Store explicit method to group mappings
 
     public function configure(array $configuration): void
     {
         $this->config = array_merge($this->config, $configuration);
+        $this->validateConfiguration();
+        $this->buildExplicitMethodGroups();
+    }
+
+    /**
+     * Validate the configuration and build explicit method group mappings
+     */
+    private function validateConfiguration(): void
+    {
+        foreach ($this->config['extract_patterns'] as $index => $pattern) {
+            if ($pattern['type'] === 'methods') {
+                if (!isset($pattern['methods']) || !is_array($pattern['methods']) || empty($pattern['methods'])) {
+                    throw new InvalidArgumentException("Pattern at index {$index}: 'methods' type requires a non-empty 'methods' array");
+                }
+
+                // If multiple methods but no trait_name, throw error
+                if (count($pattern['methods']) > 1 && !isset($pattern['trait_name'])) {
+                    $methodList = implode(', ', $pattern['methods']);
+                    throw new InvalidArgumentException("Pattern at index {$index}: Multiple methods [{$methodList}] require explicit 'trait_name'");
+                }
+            }
+        }
+    }
+
+    /**
+     * Build explicit method group mappings from patterns
+     */
+    private function buildExplicitMethodGroups(): void
+    {
+        $this->explicitMethodGroups = [];
+
+        foreach ($this->config['extract_patterns'] as $pattern) {
+            if ($pattern['type'] === 'methods') {
+                $methods = $pattern['methods'];
+
+                if (count($methods) === 1) {
+                    // 1:1 mapping - auto-generate trait name
+                    $methodName = $methods[0];
+                    $traitName = isset($pattern['trait_name']) ? $pattern['trait_name'] : ucfirst($methodName) . 'Trait';
+                    $this->explicitMethodGroups[$methodName] = $traitName;
+                } else {
+                    // N:1 mapping - use explicit trait name
+                    $traitName = $pattern['trait_name'];
+                    foreach ($methods as $methodName) {
+                        $this->explicitMethodGroups[$methodName] = $traitName;
+                    }
+                }
+            }
+        }
     }
 
     private function traverseNodesOfType(Node $node, callable $callback): void
@@ -103,7 +148,6 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
             }
         }
     }
-
 
     public function getRuleDefinition(): RuleDefinition
     {
@@ -129,11 +173,6 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
                             return strtolower(trim($email));
                         }
 
-                        public function formatPhone(string $phone): string
-                        {
-                            return preg_replace('/[^\d+]/', '', $phone);
-                        }
-
                         public function saveUser(array $data): void
                         {
                             // Business logic here
@@ -149,34 +188,6 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
                         public function saveUser(array $data): void
                         {
                             // Business logic here
-                        }
-                    }
-
-                    // Generated: src/Traits/ValidationTrait.php
-                    trait ValidationTrait
-                    {
-                        public function validateEmail(string $email): bool
-                        {
-                            return filter_var($email, FILTER_VALIDATE_EMAIL) !== false;
-                        }
-
-                        public function validatePhone(string $phone): bool
-                        {
-                            return preg_match('/^\+?[1-9]\d{1,14}$/', $phone);
-                        }
-                    }
-
-                    // Generated: src/Traits/FormattingTrait.php
-                    trait FormattingTrait
-                    {
-                        public function formatEmail(string $email): string
-                        {
-                            return strtolower(trim($email));
-                        }
-
-                        public function formatPhone(string $phone): string
-                        {
-                            return preg_replace('/[^\d+]/', '', $phone);
                         }
                     }
                     CODE_SAMPLE
@@ -236,7 +247,7 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
             echo "\nAnalyzing {$totalMethods} methods: ";
         }
 
-        // PHASE 1: Build usage maps for smart dependency detection
+        // Build usage maps for smart dependency detection
         if ($this->config['auto_move_dependencies']) {
             $this->buildUsageMaps($class);
         }
@@ -244,7 +255,6 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
         foreach ($methods as $index => $method) {
             if ($this->config['show_progress']) {
                 echo '.';
-                // Add newline every 50 dots for readability
                 if (($index + 1) % 50 === 0) {
                     echo " (" . ($index + 1) . "/{$totalMethods})\n                           ";
                 }
@@ -280,11 +290,6 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
             return false;
         }
 
-        // NEW: Check direct mapping mode first
-        if ($this->config['use_direct_mapping']) {
-            return isset($this->config['method_to_trait_map'][$methodName]);
-        }
-
         // Check extract patterns
         if (!empty($this->config['extract_patterns'])) {
             return $this->matchesExtractionPattern($method);
@@ -299,6 +304,13 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
 
         foreach ($this->config['extract_patterns'] as $pattern) {
             switch ($pattern['type']) {
+                case 'methods':
+                    // Check if method is in the explicit methods list
+                    if (in_array($methodName, $pattern['methods'], true)) {
+                        return true;
+                    }
+                    break;
+
                 case 'prefix':
                     if (strncmp($methodName, $pattern['value'], strlen($pattern['value'])) === 0) {
                         return true;
@@ -401,16 +413,16 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
     {
         $methodName = $method->name->toString();
 
-        // NEW: Check direct mapping first
-        if ($this->config['use_direct_mapping'] && isset($this->config['method_to_trait_map'][$methodName])) {
-            $traitName = $this->config['method_to_trait_map'][$methodName];
+        // Check if method has explicit group mapping from 'methods' patterns
+        if (isset($this->explicitMethodGroups[$methodName])) {
+            $traitName = $this->explicitMethodGroups[$methodName];
             // Remove 'Trait' suffix if present to avoid 'TraitTrait'
             return substr_compare($traitName, 'Trait', -strlen('Trait')) === 0 ? substr($traitName, 0, -5) : $traitName;
         }
 
         switch ($this->config['group_by']) {
             case 'prefix':
-                // Group by common prefixes (validate, format, calculate, etc.)
+                // Group by common prefixes
                 $commonPrefixes = ['validate', 'format', 'calculate', 'convert', 'transform', 'parse', 'generate'];
                 foreach ($commonPrefixes as $prefix) {
                     if (strncmp($methodName, $prefix, strlen($prefix)) === 0) {
@@ -475,15 +487,22 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
             $groups[$group][] = $methodInfo;
         }
 
-        // NEW: Skip minimum method filter for direct mapping mode
-        if ($this->config['use_direct_mapping']) {
-            return $groups;
+        // For explicit method groups, skip minimum method filter
+        $explicitGroups = array_unique(array_values($this->explicitMethodGroups));
+        $filteredGroups = [];
+
+        foreach ($groups as $groupName => $groupMethods) {
+            $traitName = $groupName . 'Trait';
+            if (in_array($groupName, $explicitGroups, true) || in_array($traitName, $explicitGroups, true)) {
+                // This is an explicit group, don't apply minimum filter
+                $filteredGroups[$groupName] = $groupMethods;
+            } elseif (count($groupMethods) >= $this->config['min_methods_per_trait']) {
+                // Apply minimum filter for automatic groups
+                $filteredGroups[$groupName] = $groupMethods;
+            }
         }
 
-        // Filter groups that have minimum required methods
-        return array_filter($groups, function ($group): bool {
-            return count($group) >= $this->config['min_methods_per_trait'];
-        });
+        return $filteredGroups;
     }
 
     private function extractMethodsToTraits(array $groupedMethods, Class_ $originalClass): array
@@ -544,7 +563,6 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
             if (isset($methodInfo['dependencies']['properties']) && !empty($methodInfo['dependencies']['properties'])) {
                 foreach ($methodInfo['dependencies']['properties'] as $propertyName) {
                     $property = $this->getProperty($originalClass, $propertyName);
-                    // NEW: Check if property should be moved to trait
                     if ($property && !$this->arrayContainsProperty($requiredProperties, $property) && $this->shouldMovePropertyToTrait($propertyName, $extractedMethodNames)) {
                         $requiredProperties[] = clone $property;
                     }
@@ -560,7 +578,7 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
                 }
             }
 
-            // NEW: Check for internal method dependencies and move them if appropriate
+            // Check for internal method dependencies and move them if appropriate
             if (isset($methodInfo['dependencies']['methods']) && !empty($methodInfo['dependencies']['methods'])) {
                 foreach ($methodInfo['dependencies']['methods'] as $dependentMethodName) {
                     if ($this->shouldMoveMethodToTrait($dependentMethodName, $extractedMethodNames)) {
@@ -580,7 +598,7 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
             $traitMethods
         );
 
-        // Create the trait using direct assignment (fixes PhpParser constructor issue)
+        // Create the trait using direct assignment
         $trait = new Trait_(new Identifier($traitName));
         $trait->stmts = $traitStmts;
 
@@ -964,7 +982,7 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
     }
 
     /**
-     * NEW: Build comprehensive usage maps for smart dependency migration
+     * Build comprehensive usage maps for smart dependency migration
      */
     private function buildUsageMaps(Class_ $class): void
     {
@@ -1004,7 +1022,7 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
     }
 
     /**
-     * NEW: Analyze what methods and properties a specific method uses
+     * Analyze what methods and properties a specific method uses
      */
     private function analyzeMethodUsage(ClassMethod $method, string $callerMethodName): void
     {
@@ -1032,37 +1050,44 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
     }
 
     /**
-     * NEW: Determine if a method should be moved to the trait
+     * Determine if a method should be moved to the trait
      */
     private function shouldMoveMethodToTrait(string $methodName, array $extractedMethodNames): bool
     {
         if (!$this->config['auto_move_dependencies']) {
             return false;
         }
+
         // Don't move if method doesn't exist in usage map
         if (!isset($this->methodUsageMap[$methodName])) {
             return false;
         }
+
         $usage = $this->methodUsageMap[$methodName];
+
         // Check if method visibility is in allowed scopes
         $allowedScopes = $this->config['move_method_scopes'] ?? ['private'];
         $methodScope = $usage['isPrivate'] ? 'private' : ($usage['isProtected'] ? 'protected' : 'public');
+
         if (!in_array($methodScope, $allowedScopes, true)) {
             return false;
         }
+
         // Don't move if it's in the excluded methods list
         if (in_array($methodName, $this->config['exclude_methods'], true)) {
             return false;
         }
+
         // Check if method is ONLY used by methods being extracted
         $usedBy = array_unique($usage['usedBy']);
         $usedByExtracted = array_intersect($usedBy, $extractedMethodNames);
+
         // Move if ALL usages are from extracted methods
         return $usedBy !== [] && count($usedBy) === count($usedByExtracted);
     }
 
     /**
-     * NEW: Determine if a property should be moved to the trait
+     * Determine if a property should be moved to the trait
      */
     private function shouldMovePropertyToTrait(string $propertyName, array $extractedMethodNames): bool
     {
@@ -1094,7 +1119,7 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
     }
 
     /**
-     * NEW: Get a method by name from class
+     * Get a method by name from class
      */
     private function getMethod(Class_ $class, string $methodName): ?ClassMethod
     {
@@ -1107,7 +1132,7 @@ final class MethodsToTraitsRector extends AbstractRector implements Configurable
     }
 
     /**
-     * NEW: Check if method array already contains a specific method
+     * Check if method array already contains a specific method
      */
     private function arrayContainsMethod(array $methods, ClassMethod $targetMethod): bool
     {
