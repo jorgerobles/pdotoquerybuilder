@@ -119,8 +119,16 @@ final class PdoToQueryBuilderRector extends AbstractRector implements Configurab
 
     private function isPdoVariable($var): bool
     {
-        if (!$var instanceof Variable) {
-            return false;
+        if ($var instanceof Variable) {
+            return true;
+        }
+
+        if ($var instanceof PropertyFetch && ($var->var instanceof Variable && $this->isName($var->var, 'this'))) {
+            foreach ($this->pdoVariableNames as $propertyName) {
+                if ($this->isName($var->name, $propertyName)) {
+                    return true;
+                }
+            }
         }
 
         foreach ($this->pdoVariableNames as $variableName) {
