@@ -17,13 +17,15 @@
     "autoload": {
         "psr-4": {
             "JDR\\Rector\\PdoToQb\\": "PdoToQb/src",
-            "JDR\\Rector\\MethodsToTraits\\": "MethodsToTraits/src"
+            "JDR\\Rector\\MethodsToTraits\\": "MethodsToTraits/src",
+            "JDR\\Rector\\RouteAnnotator\\": "RouteAnnotator/src"
         }
     },
     "autoload-dev": {
         "psr-4": {
             "JDR\\Rector\\PdoToQb\\Tests\\": "PdoToQb/tests",
-            "JDR\\Rector\\MethodsToTraits\\Tests\\": "MethodsToTraits/tests"
+            "JDR\\Rector\\MethodsToTraits\\Tests\\": "MethodsToTraits/tests",
+            "JDR\\Rector\\RouteAnnotator\\Tests\\": "RouteAnnotator/tests"
         }
     },
     "config": {

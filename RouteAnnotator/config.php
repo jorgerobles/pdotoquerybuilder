@@ -1,0 +1,28 @@
+<?php
+
+// 1. Rector Configuration (rector.php)
+declare(strict_types=1);
+
+use JDR\Rector\RouteAnnotator\RouteRector;
+use Rector\Config\RectorConfig;
+
+
+return static function (RectorConfig $rectorConfig): void {
+    $rectorConfig->paths([
+        __DIR__ . '/tests',
+    ]);
+
+    // Register our custom Rector rule
+    $rectorConfig->rule(RouteRector::class);
+
+    // Configure the rule with custom parameters
+    $rectorConfig->ruleWithConfiguration(RouteRector::class, [
+        'classPattern' => 'Controller',
+        'addUseStatement' => false,  // Set to true if you want "use Symfony\Component\Routing\Annotation\Route;"
+        'pathTemplate' => function($variables = []): string {
+            $variables['moduleSlug'] = basename(dirname($variables['filePath'],2));
+            return RouteRector::template('/:moduleSlug/:controllerSlug/:methodSlug/{params}', $variables, ':',null);
+        },
+        'requirements'=>['params'=>'.+']
+    ]);
+};
