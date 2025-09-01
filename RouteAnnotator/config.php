@@ -9,7 +9,8 @@ use Rector\Config\RectorConfig;
 
 return static function (RectorConfig $rectorConfig): void {
     $rectorConfig->paths([
-        __DIR__ . '/tests',
+        #__DIR__ . '/tests',
+        '/home/jorge/workspace/src/gitlab.com/hub-buildings/services/hub-os-backend-v1/modules/accorinvest'
     ]);
 
     // Register our custom Rector rule
@@ -22,6 +23,10 @@ return static function (RectorConfig $rectorConfig): void {
         'pathTemplate' => function($variables = []): string {
             $variables['moduleSlug'] = basename(dirname($variables['filePath'],2));
             return RouteRector::template('/:moduleSlug/:controllerSlug/:methodSlug/{params}', $variables, ':',null);
+        },
+        'nameTemplate' => function($variables = []): string {
+            $variables['moduleSlug'] = basename(dirname($variables['filePath'],2));
+            return RouteRector::template(':moduleSlug_:controllerSlug_:methodSlug', $variables);
         },
         'requirements'=>['params'=>'.+']
     ]);

@@ -31,6 +31,8 @@ final class RouteRector extends AbstractRector implements ConfigurableRectorInte
     private array $excludedMethods = ['__construct', '__destruct', '__clone'];
     private bool $addUseStatement = false;
     private mixed $pathTemplate = '/:controllerSlug/:methodSlug';
+
+    private mixed $nameTemplate = ':controllerSlug_:methodSlug';
     private array $requirements =[];
 
     public function __construct(
@@ -210,11 +212,11 @@ final class RouteRector extends AbstractRector implements ConfigurableRectorInte
 
     private function generateRoutePath(string $className, string $methodName): string
     {
-        error_log(dirname(dirname($this->file->getFilePath())));
+
 
         // Convert class name to route prefix
         // e.g., "UserController" -> "user"
-        $controllerName = str_replace($this->classPattern, '', $className);
+        $controllerName = str_replace($this->classPattern, '', basename(str_replace('\\', '/', $className)));
         $controllerSlug = $this->camelCaseToKebabCase($controllerName);
 
         // Convert method name to route suffix
@@ -231,11 +233,15 @@ final class RouteRector extends AbstractRector implements ConfigurableRectorInte
     {
         // Convert to snake_case for route name
         // e.g., "UserController::showProfile" -> "user_show_profile"
-        $controllerName = str_replace($this->classPattern, '', $className);
+        $controllerName = str_replace($this->classPattern, '', basename(str_replace('\\', '/', $className)));
         $controllerSlug = $this->camelCaseToSnakeCase($controllerName);
         $methodSlug = $this->camelCaseToSnakeCase($methodName);
 
-        return $controllerSlug . '_' . $methodSlug;
+        if (is_callable($this->nameTemplate)) {
+            return call_user_func($this->nameTemplate, ['controllerSlug' => $controllerSlug, 'methodSlug' => $methodSlug, 'filePath' => $this->file->getFilePath()]);
+        }
+
+        return $this->template($this->nameTemplate, ['controllerSlug' => $controllerSlug, 'methodSlug' => $methodSlug]);
     }
 
     private function camelCaseToKebabCase(string $input): string
@@ -259,6 +265,7 @@ final class RouteRector extends AbstractRector implements ConfigurableRectorInte
         $this->excludedMethods = $configuration['excludedMethods'] ?? $this->excludedMethods;
         $this->addUseStatement = $configuration['addUseStatement'] ?? $this->addUseStatement;
         $this->pathTemplate = $configuration['pathTemplate'] ?? $this->pathTemplate;
+        $this->nameTemplate = $configuration['nameTemplate'] ?? $this->nameTemplate;
         $this->requirements = $configuration['requirements'] ?? $this->requirements;
     }
 
@@ -267,7 +274,7 @@ final class RouteRector extends AbstractRector implements ConfigurableRectorInte
      * @param array<string,mixed> $variables
      * @return string
      */
-    public static function template(string $template, array $variables = [], ?string $start = '{', ?string $end = '}'): string
+    public static function template(string $template, array $variables = [], ?string $start = ':', ?string $end = null): string
     {
         $params = array_reduce(array_keys($variables), function ($stack, $key) use ($variables, $start, $end) {
             $stack[($start ?? '') . $key . ($end ?? '')] = $variables[$key];
