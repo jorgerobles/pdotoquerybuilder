@@ -20,14 +20,14 @@ return static function (RectorConfig $rectorConfig): void {
     $rectorConfig->ruleWithConfiguration(RouteRector::class, [
         'classPattern' => 'Controller',
         'addUseStatement' => false,  // Set to true if you want "use Symfony\Component\Routing\Annotation\Route;"
-        'pathTemplate' => function($variables = []): string {
-            $variables['moduleSlug'] = basename(dirname($variables['filePath'],2));
-            return RouteRector::template('/:moduleSlug/:controllerSlug/:methodSlug/{params}', $variables, ':',null);
-        },
+//        'pathTemplate' => function($variables = []): string {
+//            $variables['moduleSlug'] = basename(dirname($variables['filePath'],2));
+//            return RouteRector::template('/:moduleSlug/:controllerSlug/:methodSlug/{params}', $variables, ':',null);
+//        },
         'nameTemplate' => function($variables = []): string {
             $variables['moduleSlug'] = basename(dirname($variables['filePath'],2));
             return RouteRector::template(':moduleSlug_:controllerSlug_:methodSlug', $variables);
         },
-        'requirements'=>['params'=>'.+']
+        //'requirements'=>['params'=>'.+']
     ]);
 };
