@@ -10,11 +10,12 @@ use Rector\Config\RectorConfig;
 return static function (RectorConfig $rectorConfig): void {
     $rectorConfig->paths([
         #__DIR__ . '/tests',
-        '/home/jorge/workspace/src/gitlab.com/hub-buildings/services/hub-os-backend-v1/modules/accorinvest'
+        '/home/jorge/workspace/src/gitlab.com/hub-buildings/services/hub-os-backend-v1/modules/'
     ]);
 
     // Register our custom Rector rule
     $rectorConfig->rule(RouteRector::class);
+    $rectorConfig->parallel(300, 16, 5);
 
     // Configure the rule with custom parameters
     $rectorConfig->ruleWithConfiguration(RouteRector::class, [

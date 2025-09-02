@@ -13,6 +13,7 @@ use PhpParser\Node\Name;
 use PhpParser\Node\Scalar\String_;
 use PhpParser\Node\Stmt\Class_;
 use PhpParser\Node\Stmt\ClassMethod;
+use PhpParser\Node\Arg;
 use Rector\Contract\Rector\ConfigurableRectorInterface;
 use Rector\Rector\AbstractRector;
 use Rector\StaticTypeMapper\ValueObject\Type\FullyQualifiedObjectType;
@@ -183,28 +184,33 @@ final class RouteRector extends AbstractRector implements ConfigurableRectorInte
         // Detect method parameters for route generation
         $methodParams = $this->extractMethodParameters($classMethod);
 
-        // Generate route path based on class, method name, and parameters
+        // Generate single route with all parameters (including optional ones)
         $routePath = $this->generateRoutePath($className, $methodName, $methodParams);
         $routeName = $this->generateRouteName($className, $methodName);
         $paramRequirements = $this->generateParameterRequirements($methodParams);
+        $paramDefaults = $this->generateParameterDefaults($methodParams);
 
-        // Create Route attribute arguments
+        // Create Route attribute arguments using named parameters syntax
         $routeArgs = [
-            // Path argument
-            new ArrayItem(new String_($routePath)),
-
-            // Name argument
-            new ArrayItem(new String_($routeName), new String_('name')),
-
-            // Methods argument (default to GET and POST)
-            new ArrayItem(
-                new Array_([
-                    new ArrayItem(new String_('GET')),
-                    new ArrayItem(new String_('POST'))
-                ]),
-                new String_('methods')
-            ),
+            // Path argument (positional)
+            new Arg(new String_($routePath))
         ];
+
+        // Add named arguments
+        $routeArgs[] = new Arg(
+            new String_($routeName),
+            false, false, [],
+            new \PhpParser\Node\Identifier('name')
+        );
+
+        $routeArgs[] = new Arg(
+            new Array_([
+                new ArrayItem(new String_('GET')),
+                new ArrayItem(new String_('POST'))
+            ]),
+            false, false, [],
+            new \PhpParser\Node\Identifier('methods')
+        );
 
         // Merge parameter requirements with configured requirements
         $allRequirements = array_merge($this->requirements, $paramRequirements);
@@ -214,9 +220,26 @@ final class RouteRector extends AbstractRector implements ConfigurableRectorInte
             foreach ($allRequirements as $rk => $rv) {
                 $reqs[] = new ArrayItem(new String_($rv), new String_($rk));
             }
-            $routeArgs[] = new ArrayItem(
+
+            $routeArgs[] = new Arg(
                 new Array_($reqs),
-                new String_('requirements')
+                false, false, [],
+                new \PhpParser\Node\Identifier('requirements')
+            );
+        }
+
+        // Add defaults if any parameters have default values
+        if (count($paramDefaults) > 0) {
+            $defaults = [];
+            foreach ($paramDefaults as $dk => $dv) {
+                $defaultValue = $this->createDefaultValueNode($dv);
+                $defaults[] = new ArrayItem($defaultValue, new String_($dk));
+            }
+
+            $routeArgs[] = new Arg(
+                new Array_($defaults),
+                false, false, [],
+                new \PhpParser\Node\Identifier('defaults')
             );
         }
 
@@ -232,7 +255,7 @@ final class RouteRector extends AbstractRector implements ConfigurableRectorInte
     }
 
     /**
-     * Extract method parameters with their types for route generation
+     * Extract method parameters with their types and default values
      */
     private function extractMethodParameters(ClassMethod $classMethod): array
     {
@@ -241,20 +264,17 @@ final class RouteRector extends AbstractRector implements ConfigurableRectorInte
         foreach ($classMethod->params as $param) {
             $paramName = $this->getName($param->var);
             $paramType = null;
+            $defaultValue = null;
 
             // Get parameter type if specified - handle different AST type representations
             if ($param->type !== null) {
                 if ($param->type instanceof \PhpParser\Node\Name) {
-                    // Simple type like 'int', 'string', etc.
                     $paramType = $param->type->toString();
                 } elseif ($param->type instanceof \PhpParser\Node\Identifier) {
-                    // Built-in types
                     $paramType = $param->type->name;
                 } elseif ($param->type instanceof \PhpParser\Node\NullableType) {
-                    // Nullable types like ?int, ?string
                     $paramType = $this->getName($param->type->type);
                 } elseif ($param->type instanceof \PhpParser\Node\UnionType) {
-                    // Union types - take the first non-null type
                     foreach ($param->type->types as $unionType) {
                         if (!($unionType instanceof \PhpParser\Node\Name && $unionType->toString() === 'null')) {
                             $paramType = $this->getName($unionType);
@@ -262,23 +282,167 @@ final class RouteRector extends AbstractRector implements ConfigurableRectorInte
                         }
                     }
                 } else {
-                    // Fallback to getName
                     $paramType = $this->getName($param->type);
                 }
+            }
 
-                // Debug: Log the parameter type we found
-                error_log("DEBUG: Parameter '{$paramName}' has type: " . ($paramType ?? 'null') . " (AST node: " . get_class($param->type) . ")");
+            // Extract default value if present
+            if ($param->default !== null) {
+                $defaultValue = $this->extractDefaultValue($param->default);
             }
 
             $parameters[] = [
                 'name' => $paramName,
                 'type' => $paramType,
                 'hasDefault' => $param->default !== null,
+                'defaultValue' => $defaultValue,
                 'isOptional' => $param->default !== null
             ];
         }
 
         return $parameters;
+    }
+
+    /**
+     * Extract default value from AST node
+     */
+    private function extractDefaultValue(\PhpParser\Node\Expr $defaultExpr): mixed
+    {
+        if ($defaultExpr instanceof \PhpParser\Node\Scalar\String_) {
+            return $defaultExpr->value;
+        } elseif ($defaultExpr instanceof \PhpParser\Node\Scalar\LNumber) {
+            return $defaultExpr->value; // This is already an int
+        } elseif ($defaultExpr instanceof \PhpParser\Node\Scalar\DNumber) {
+            return $defaultExpr->value; // This is already a float
+        } elseif ($defaultExpr instanceof \PhpParser\Node\Expr\ConstFetch) {
+            $constName = $defaultExpr->name->toString();
+            switch (strtolower($constName)) {
+                case 'true':
+                    return true;
+                case 'false':
+                    return false;
+                case 'null':
+                    return null;
+                default:
+                    return $constName; // Return as string for other constants
+            }
+        } elseif ($defaultExpr instanceof \PhpParser\Node\Expr\Array_) {
+            // Handle arrays
+            if (empty($defaultExpr->items)) {
+                return []; // Empty array
+            } else {
+                $result = [];
+                foreach ($defaultExpr->items as $item) {
+                    if ($item === null) continue; // Skip null items
+
+                    $key = null;
+                    if ($item->key !== null) {
+                        $key = $this->extractDefaultValue($item->key);
+                    }
+
+                    $value = $this->extractDefaultValue($item->value);
+
+                    if ($key !== null) {
+                        $result[$key] = $value;
+                    } else {
+                        $result[] = $value;
+                    }
+                }
+                return $result;
+            }
+        } elseif ($defaultExpr instanceof \PhpParser\Node\Expr\UnaryMinus) {
+            // Handle negative numbers
+            $operand = $this->extractDefaultValue($defaultExpr->expr);
+            if (is_numeric($operand)) {
+                return -$operand;
+            }
+            return "-$operand";
+        } elseif ($defaultExpr instanceof \PhpParser\Node\Expr\UnaryPlus) {
+            // Handle positive numbers (rarely used)
+            return $this->extractDefaultValue($defaultExpr->expr);
+        }
+
+        // For complex expressions, return a string representation
+        // This is a fallback and might not always be perfect
+        try {
+            return $this->printPhpParserNode($defaultExpr);
+        } catch (\Exception $e) {
+            // If we can't print the node, return a generic string
+            return 'default_value';
+        }
+    }
+
+    /**
+     * Generate defaults for parameters that have default values
+     */
+    private function generateParameterDefaults(array $methodParams): array
+    {
+        $defaults = [];
+
+        foreach ($methodParams as $param) {
+            if ($param['hasDefault'] && isset($param['defaultValue'])) {
+                $defaults[$param['name']] = $param['defaultValue'];
+            }
+        }
+
+        return $defaults;
+    }
+
+    /**
+     * Create the appropriate AST node for a default value
+     */
+    private function createDefaultValueNode($value): \PhpParser\Node\Expr
+    {
+        // Handle null values
+        if ($value === null) {
+            return new \PhpParser\Node\Expr\ConstFetch(new \PhpParser\Node\Name('null'));
+        }
+
+        // Handle boolean values
+        if (is_bool($value)) {
+            return new \PhpParser\Node\Expr\ConstFetch(new \PhpParser\Node\Name($value ? 'true' : 'false'));
+        }
+
+        // Handle numeric values - ensure proper type conversion
+        if (is_numeric($value)) {
+            if (is_int($value)) {
+                return new \PhpParser\Node\Scalar\LNumber((int)$value);
+            } elseif (is_float($value)) {
+                return new \PhpParser\Node\Scalar\DNumber((float)$value);
+            } else {
+                // If it's a numeric string, try to convert it properly
+                if (strpos((string)$value, '.') !== false) {
+                    return new \PhpParser\Node\Scalar\DNumber((float)$value);
+                } else {
+                    return new \PhpParser\Node\Scalar\LNumber((int)$value);
+                }
+            }
+        }
+
+        // Handle string values (including non-numeric strings)
+        if (is_string($value)) {
+            return new String_($value);
+        }
+
+        // Handle arrays (empty arrays are common defaults)
+        if (is_array($value)) {
+            if (empty($value)) {
+                return new Array_([]);
+            } else {
+                // For non-empty arrays, convert each element
+                $items = [];
+                foreach ($value as $k => $v) {
+                    $items[] = new ArrayItem(
+                        $this->createDefaultValueNode($v),
+                        is_string($k) ? new String_($k) : null
+                    );
+                }
+                return new Array_($items);
+            }
+        }
+
+        // Fallback: convert to string
+        return new String_((string)$value);
     }
 
     /**
@@ -292,9 +456,6 @@ final class RouteRector extends AbstractRector implements ConfigurableRectorInte
             $paramName = $param['name'];
             $paramType = $param['type'];
 
-            // Debug: Log what we're processing
-            error_log("DEBUG: Processing param '{$paramName}' with type '" . ($paramType ?? 'null') . "'");
-
             // Skip parameters without names
             if (empty($paramName)) {
                 continue;
@@ -305,35 +466,27 @@ final class RouteRector extends AbstractRector implements ConfigurableRectorInte
                 case 'int':
                 case 'integer':
                     $requirements[$paramName] = '\d+';
-                    error_log("DEBUG: Added int requirement for {$paramName}");
                     break;
                 case 'string':
                     $requirements[$paramName] = '[^/]+';
-                    error_log("DEBUG: Added string requirement for {$paramName}");
                     break;
                 case 'float':
                 case 'double':
                     $requirements[$paramName] = '\d+(\.\d+)?';
-                    error_log("DEBUG: Added float requirement for {$paramName}");
                     break;
                 case 'bool':
                 case 'boolean':
                     $requirements[$paramName] = '0|1|true|false';
-                    error_log("DEBUG: Added bool requirement for {$paramName}");
                     break;
                 default:
                     // For custom types, no type hint, or unknown types, use a general pattern
                     if (!empty($paramType)) {
                         $requirements[$paramName] = '[^/]+';
-                        error_log("DEBUG: Added default requirement for {$paramName} (type: {$paramType})");
-                    } else {
-                        error_log("DEBUG: No requirement added for {$paramName} (no type)");
                     }
                     break;
             }
         }
 
-        error_log("DEBUG: Final requirements: " . json_encode($requirements));
         return $requirements;
     }
 
